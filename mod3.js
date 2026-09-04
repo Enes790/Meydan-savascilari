@@ -1,10 +1,11 @@
 // ========== mod4.js (TAŞÇI) - SON DÜZELTMELER ==========
 // Karakter: Taşçı
 // Ana saldırı: Ağır taş atar (1500 hasar, 2 kez seker).
-// Menzil: 140 (kısaltıldı)
-// Menzil sonunda 9 parçaya ayrılır (her biri 200 hasar).
-// Parçalar: biri taşın gittiği yönde, diğerleri maksimum ±60° sapma ile.
-// Taş bota çarparsa parçalanmaz, direkt hasar verir ve yok olur.
+// Menzil: 140
+// Taş engele çarpınca engele hasar verir (200) ve sekme hakkı varsa seker.
+// Parçalanma efekti çok hafifletildi.
+// Nişan çizgisi güzelleştirildi.
+// Taş ve parça hızları düşürüldü.
 
 (function () {
     'use strict';
@@ -14,15 +15,16 @@
     const CHAR_HP = 3400;
     const CHAR_SPEED = 3.6;
 
-    const TAS_MENZIL = 140;                  // daha da kısaltıldı
+    const TAS_MENZIL = 140;
     const TAS_HASAR = 1500;
-    const TAS_HIZ = PLAYER_BULLET_SPEED * 0.8;
+    const TAS_HIZ = PLAYER_BULLET_SPEED * 0.65; // hız düşürüldü
     const TAS_SEKME_HAKKI = 2;
+    const ENGELE_HASAR = 200;
     const PARCA_HASAR = 200;
     const PARCA_SAYISI = 9;
-    const PARCA_HIZ = PLAYER_BULLET_SPEED * 0.7;
-    const PARCA_MENZIL = 100;                // parça menzili de kısaltıldı
-    const PARCA_MAX_ACI = Math.PI / 3;       // 60 derece
+    const PARCA_HIZ = PLAYER_BULLET_SPEED * 0.55; // parça hızı düşürüldü
+    const PARCA_MENZIL = 90;
+    const PARCA_MAX_ACI = Math.PI / 3;
 
     window.GAME_EXT.characters[CHAR_ID] = { color: CHAR_COLOR, hp: CHAR_HP, speed: CHAR_SPEED };
 
@@ -88,8 +90,7 @@
             sekmeHakki: TAS_SEKME_HAKKI,
             hasar: TAS_HASAR,
             isDead: false,
-            rotasyon: Math.random() * Math.PI * 2,
-            boyut: 12
+            rotasyon: Math.random() * Math.PI * 2
         });
         this.consumeAmmo();
         this.lastShotTime = Date.now();
@@ -101,18 +102,12 @@
         tasciParcalar = [];
     });
 
-    // ---- Draw hook: taş ve parçaları çiz ----
+    // ---- Draw hook ----
     chainHook('onDraw', function (ctx2) {
         tasciKayalar.forEach(b => {
             ctx2.save();
             ctx2.translate(b.x, b.y);
-            ctx2.rotate(b.rotasyon + Date.now() / 200); // havada dönme
-            // Gölge
-            ctx2.shadowColor = 'rgba(0,0,0,0.5)';
-            ctx2.shadowBlur = 6;
-            ctx2.shadowOffsetX = 3;
-            ctx2.shadowOffsetY = 3;
-            // Düzensiz taş şekli (çokgen)
+            ctx2.rotate(b.rotasyon + Date.now() / 200);
             ctx2.beginPath();
             ctx2.moveTo(12, 0);
             ctx2.lineTo(6, -9);
@@ -122,26 +117,16 @@
             ctx2.closePath();
             ctx2.fillStyle = '#8b5e3c';
             ctx2.fill();
-            ctx2.shadowColor = 'transparent';
-            ctx2.shadowBlur = 0;
-            ctx2.shadowOffsetX = 0;
-            ctx2.shadowOffsetY = 0;
             ctx2.strokeStyle = '#3e2710';
             ctx2.lineWidth = 2;
             ctx2.stroke();
-            // Çatlaklar
             ctx2.beginPath();
             ctx2.moveTo(-2, -4);
             ctx2.lineTo(5, 1);
             ctx2.lineTo(-3, 5);
             ctx2.strokeStyle = '#5d3a1a';
-            ctx2.lineWidth = 1.5;
+            ctx2.lineWidth = 1;
             ctx2.stroke();
-            // Küçük çukurlar
-            ctx2.beginPath();
-            ctx2.arc(2, -3, 2, 0, Math.PI*2);
-            ctx2.fillStyle = '#5d3a1a';
-            ctx2.fill();
             ctx2.restore();
         });
 
@@ -175,7 +160,7 @@
     }
     requestAnimationFrame(tasciLoop);
 
-    // ---- Parça oluşturma ----
+    // ---- Parça oluşturma (hafif efekt) ----
     function tasciParcala(tas) {
         const anaAci = Math.atan2(tas.vy, tas.vx);
         const acilar = [];
@@ -197,17 +182,15 @@
                 rotasyon: Math.random() * Math.PI * 2
             });
         });
-        // Parçalanma efekti: yoğun parçacık
-        for (let k = 0; k < 25; k++) {
+        // Çok hafif parçacık (3 adet)
+        for (let k = 0; k < 3; k++) {
             spawnParticles(tas.x, tas.y, '#8b5e3c', 'normal');
         }
-        screenShake = 5;
         addFloatingNumber(tas.x, tas.y, "PARÇALANDI!", "#8b5e3c");
     }
 
     // ---- Güncelleme ----
     function tasciUpdate(ts) {
-        // Taşlar
         for (let i = tasciKayalar.length - 1; i >= 0; i--) {
             const t = tasciKayalar[i];
             if (t.isDead) { tasciKayalar.splice(i, 1); continue; }
@@ -218,15 +201,29 @@
             const hwX = t.x < WALL_THICKNESS + 8 || t.x > canvas.width - WALL_THICKNESS - 8;
             const hwY = t.y < WALL_THICKNESS + 8 || t.y > canvas.height - WALL_THICKNESS - 8;
 
-            let hitObs = false;
+            let hitObs = null;
             for (const o of obstacles.concat(cactusWalls || [])) {
-                if (getDist(t, o) < o.radius + 11) { hitObs = true; break; }
+                if (getDist(t, o) < o.radius + 11) { hitObs = o; break; }
             }
 
             if ((hwX || hwY || hitObs) && t.sekmeHakki > 0) {
                 if (hwX) { t.vx *= -1; t.x = t.x < canvas.width / 2 ? WALL_THICKNESS + 9 : canvas.width - WALL_THICKNESS - 9; }
                 if (hwY) { t.vy *= -1; t.y = t.y < canvas.height / 2 ? WALL_THICKNESS + 9 : canvas.height - WALL_THICKNESS - 9; }
-                if (hitObs) { t.vx *= -1; t.vy *= -1; t.x += t.vx; t.y += t.vy; }
+                if (hitObs) {
+                    if (hitObs.hp !== undefined) hitObs.hp -= ENGELE_HASAR;
+                    addFloatingNumber(hitObs.x, hitObs.y, ENGELE_HASAR, "#8b5e3c");
+                    // Yansıma
+                    const dx = t.x - hitObs.x;
+                    const dy = t.y - hitObs.y;
+                    const d = Math.max(1, Math.hypot(dx, dy));
+                    const nx = dx / d;
+                    const ny = dy / d;
+                    const dot = t.vx * nx + t.vy * ny;
+                    t.vx -= 2 * dot * nx;
+                    t.vy -= 2 * dot * ny;
+                    t.x += nx * 5;
+                    t.y += ny * 5;
+                }
                 t.sekmeHakki--;
                 t.sx = t.x; t.sy = t.y;
                 spawnParticles(t.x, t.y, '#8b5e3c', 'normal');
@@ -255,7 +252,6 @@
             });
         }
 
-        // Parçalar
         for (let i = tasciParcalar.length - 1; i >= 0; i--) {
             const p = tasciParcalar[i];
             if (p.isDead) { tasciParcalar.splice(i, 1); continue; }
@@ -288,29 +284,39 @@
         }
     }
 
-    // ---- Nişan çizgisi: orijinalin çizmesini tamamen engelle ----
+    // ---- Nişan çizgisi ----
     const originalDraw = window.draw;
     window.draw = function() {
         if (player.charType === CHAR_ID && aimData.active && player.ammo >= 1 && !player.isDead) {
-            // Orijinal nişan çizgisi çizilmesin diye player.ammo'yu geçici 0 yap
             const geciciAmmo = player.ammo;
             player.ammo = 0;
             originalDraw();
             player.ammo = geciciAmmo;
 
-            // Kendi kısa nişan çizgimizi çiz
             ctx.save();
             ctx.translate(player.x, player.y);
             ctx.rotate(aimData.angle);
-            ctx.fillStyle = 'rgba(139, 94, 60, 0.25)';
-            ctx.fillRect(0, -6, TAS_MENZIL, 12);
+            // Yarı saydam dolgu
+            ctx.fillStyle = 'rgba(139, 94, 60, 0.15)';
+            ctx.fillRect(0, -5, TAS_MENZIL, 10);
+            // Kesikli çizgi
             ctx.strokeStyle = 'rgba(139, 94, 60, 0.8)';
             ctx.lineWidth = 2;
-            ctx.strokeRect(0, -6, TAS_MENZIL, 12);
-            // Menzil sonu işareti
+            ctx.setLineDash([8, 6]);
+            ctx.strokeRect(0, -5, TAS_MENZIL, 10);
+            ctx.setLineDash([]);
+            // Menzil sonu taş simgesi
             ctx.beginPath();
-            ctx.arc(TAS_MENZIL, 0, 4, 0, Math.PI * 2);
+            ctx.arc(TAS_MENZIL, 0, 8, 0, Math.PI * 2);
             ctx.fillStyle = '#8b5e3c';
+            ctx.fill();
+            ctx.strokeStyle = '#3e2710';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            // İç parlama
+            ctx.beginPath();
+            ctx.arc(TAS_MENZIL, 0, 3, 0, Math.PI * 2);
+            ctx.fillStyle = '#d4a574';
             ctx.fill();
             ctx.restore();
         } else {
