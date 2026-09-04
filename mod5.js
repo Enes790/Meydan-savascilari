@@ -1,7 +1,7 @@
-// ========== mod6.js (MUTASYON MODU - AŞAMA 1: HIZLI BOT + HEMŞİRE BOT) ==========
-// Mutasyon modu: Klasik botlar değişir.
-// Hızlı Bot: her 8.17 sn'de spawn, yakınındaki bot başına %5 hız, max %100.
-// Hemşire Bot: 10 bot ölünce aktif, botlara +400 iyileştirme, oyuncuya 400 hasar + zehir.
+// ========== mod6.js (MUTASYON MODU - DÜZELTİLMİŞ) ==========
+// - Klasik botlar tamamen engellendi (spawn timerları sıfırlanıyor, diziler temizleniyor).
+// - Hızlı Bot ve Hemşire Bot, klasik mor bot gibi çiziliyor.
+// - Hasar alabilmeleri için mermi çarpışma kontrolü manuel eklendi.
 
 (function () {
     'use strict';
@@ -9,18 +9,18 @@
     const MOD_ID = 'mutasyon';
     const HIZLI_BOT_HP = 2500;
     const HIZLI_BOT_SPEED = 1.36;
-    const HIZLI_SPAWN_INTERVAL = 490; // 8.17 sn (60fps)
+    const HIZLI_SPAWN_INTERVAL = 490; // 8.17 sn
     const HIZLI_YAKIN_MESAFE = 200;
-    const HIZLI_HIZ_ARTIS = 0.05; // %5
-    const HIZLI_MAX_HIZ = 2.0; // %100
+    const HIZLI_HIZ_ARTIS = 0.05;
+    const HIZLI_MAX_HIZ = 2.0;
 
     const HEMSIRE_HP = 4500;
     const HEMSIRE_MENZIL = 95;
-    const HEMSIRE_ATIS_INTERVAL = 60; // 1 sn
+    const HEMSIRE_ATIS_INTERVAL = 60;
     const HEMSIRE_IYILESTIRME = 400;
     const HEMSIRE_HASAR = 400;
-    const HEMSIRE_ZEHIR_SURESI = 180; // 3 sn
-    const HEMSIRE_ZEHIR_HASAR = 20; // saniyede
+    const HEMSIRE_ZEHIR_SURESI = 180;
+    const HEMSIRE_ZEHIR_HASAR = 20;
 
     let hizliBotlar = [];
     let hemsireBot = null;
@@ -28,6 +28,7 @@
     let toplamOldurulen = 0;
     let hemsireAktif = false;
 
+    // ========== MOD TANIMI ==========
     window.GAME_EXT.modes[MOD_ID] = {
         label: 'Mutasyon',
         onStart: function () {
@@ -36,8 +37,25 @@
             hizliSpawnTimer = 0;
             toplamOldurulen = 0;
             hemsireAktif = false;
+
+            // Klasik botları kapat
+            bot.isActive = false; bot.isDead = true;
+            bot2.isActive = false; bot2.isDead = true;
+            slimeBots = [];
+            stationaryBots = [];
+            boomerangBots = [];
+            fogBots = [];
+            nests = [];
+            spawnIndicators = [];
         },
         onUpdate: function (ts) {
+            // Klasik spawn timerlarını sıfırla (botlar doğmasın)
+            slimeTimer = 0;
+            stationaryTimer = 0;
+            boomerangTimer = 0;
+            fogBotTimer = 0;
+            spawnIndicators = [];
+
             // Hızlı bot spawn
             hizliSpawnTimer += ts;
             if (hizliSpawnTimer >= HIZLI_SPAWN_INTERVAL) {
@@ -76,17 +94,14 @@
                 const b = hizliBotlar[i];
                 if (b.isDead) { hizliBotlar.splice(i, 1); continue; }
 
-                // Yakın bot sayısı
                 let yakinBotSayisi = 0;
                 getActiveEnemies().forEach(e => {
                     if (e !== b && !e.isDead && getDist(b, e) < HIZLI_YAKIN_MESAFE) {
                         yakinBotSayisi++;
                     }
                 });
-                // Hız artışı
                 b.speed = Math.min(HIZLI_MAX_HIZ, b.baseSpeed * (1 + yakinBotSayisi * HIZLI_HIZ_ARTIS));
 
-                // Hareket
                 if (!player.isDead) {
                     b.angle = Math.atan2(player.y - b.y, player.x - b.x);
                 }
@@ -96,7 +111,6 @@
                     b.y += Math.sin(b.angle) * b.speed * ts;
                 }
 
-                // Ateş (ilk mermi daha hızlı)
                 if (d < RANGE && Date.now() - b.lastShot > b.shootInterval && !player.isDead) {
                     const bulletSpeed = b.ilkAtis ? BOT_BULLET_SPEED * 1.3 : BOT_BULLET_SPEED;
                     b.ilkAtis = false;
@@ -106,8 +120,7 @@
                         vx: Math.cos(b.angle) * bulletSpeed,
                         vy: Math.sin(b.angle) * bulletSpeed,
                         dmgMod: 1,
-                        owner: b,
-                        type: 'hizli_bot_mermi'
+                        owner: b
                     });
                     b.lastShot = Date.now();
                 }
@@ -131,7 +144,6 @@
 
                 if (Date.now() - h.lastShot > HEMSIRE_ATIS_INTERVAL) {
                     h.lastShot = Date.now();
-                    // En yakın botu bul (iyileştirme hedefi)
                     let hedefBot = null;
                     let minBotDist = Infinity;
                     getActiveEnemies().forEach(e => {
@@ -145,7 +157,6 @@
                     });
 
                     if (hedefBot) {
-                        // Botlara iyileştirme mermisi
                         botBullets.push({
                             x: h.x, y: h.y,
                             sx: h.x, sy: h.y,
@@ -157,7 +168,6 @@
                             hedefBot: hedefBot
                         });
                     } else if (!player.isDead && d < HEMSIRE_MENZIL) {
-                        // Oyuncuya hasar mermisi
                         botBullets.push({
                             x: h.x, y: h.y,
                             sx: h.x, sy: h.y,
@@ -184,7 +194,7 @@
         }
     };
 
-    // Botları aktif düşman listesine ekle
+    // ========== EK DÜŞMANLAR ==========
     const originalGetExtraEnemies = window.GAME_EXT.hooks.getExtraEnemies;
     window.GAME_EXT.hooks.getExtraEnemies = function () {
         let extras = [];
@@ -198,7 +208,7 @@
         return extras;
     };
 
-    // Bot ölümlerini say
+    // ========== ÖLÜM SAYACI ==========
     const originalOnEnemyKilled = window.GAME_EXT.hooks.onEnemyKilled;
     window.GAME_EXT.hooks.onEnemyKilled = function (enemy) {
         if (typeof originalOnEnemyKilled === 'function') {
@@ -237,10 +247,37 @@
         }
     };
 
-    // Hemşire mermileri çarpışma kontrolü
+    // ========== MERMİ ÇARPIŞMA (OYUNCU MERMİLERİ) ==========
     const originalUpdateBulletLogic = window.updateBulletLogic;
     window.updateBulletLogic = function (list, isBot, ts) {
-        if (isBot) {
+        if (!isBot) {
+            // Oyuncu mermileri: yeni botlara manuel çarpma kontrolü
+            for (let i = list.length - 1; i >= 0; i--) {
+                const b = list[i];
+                // Hızlı botlara çarpma
+                for (const e of hizliBotlar) {
+                    if (e.isDead) continue;
+                    if (getDist(b, e) < e.radius + 12) {
+                        e.hp -= (b.damage || 150);
+                        addFloatingNumber(e.x, e.y, b.damage || 150, "#fff");
+                        spawnParticles(b.x, b.y, '#d4a574', 'normal');
+                        list.splice(i, 1);
+                        break;
+                    }
+                }
+                if (list[i] === b) continue; // mermi silindi mi kontrol
+                // Hemşire bota çarpma
+                if (hemsireAktif && hemsireBot && !hemsireBot.isDead) {
+                    if (getDist(b, hemsireBot) < hemsireBot.radius + 12) {
+                        hemsireBot.hp -= (b.damage || 150);
+                        addFloatingNumber(hemsireBot.x, hemsireBot.y, b.damage || 150, "#fff");
+                        spawnParticles(b.x, b.y, '#d4a574', 'normal');
+                        list.splice(i, 1);
+                    }
+                }
+            }
+        } else {
+            // Bot mermileri: hemşire özel mermileri işle
             for (let i = list.length - 1; i >= 0; i--) {
                 const b = list[i];
                 if (b.type === 'hemsire_iyilestirme') {
@@ -263,7 +300,6 @@
                         player.hp -= HEMSIRE_HASAR;
                         addFloatingNumber(player.x, player.y, HEMSIRE_HASAR, "#e74c3c");
                         player.lastHitTime = Date.now();
-                        // Zehir etkisi
                         player.hemsireZehirSure = HEMSIRE_ZEHIR_SURESI;
                         list.splice(i, 1);
                         continue;
@@ -277,7 +313,7 @@
         originalUpdateBulletLogic(list, isBot, ts);
     };
 
-    // Zehir etkisi güncelleme
+    // ========== ZEHİR ETKİSİ ==========
     const originalUpdate = window.update;
     window.update = function (ts) {
         originalUpdate(ts);
@@ -295,13 +331,13 @@
         }
     };
 
-    // Görsel çizim
+    // ========== ÇİZİM (KLASİK GÖRÜNÜM) ==========
     const originalDraw = window.draw;
     window.draw = function () {
         originalDraw();
         if (!gameStarted || window.GAME_MODE !== MOD_ID) return;
 
-        // Hızlı botlar
+        // Hızlı botlar (klasik mor bot görünümü)
         hizliBotlar.forEach(b => {
             if (b.isDead) return;
             ctx.save();
@@ -313,26 +349,25 @@
             ctx.fillRect(-20, -b.radius - 15, 40 * (b.hp / b.maxHp), 5);
             // Gövde
             ctx.rotate(b.angle);
-            ctx.fillStyle = b.color;
+            ctx.fillStyle = '#9b59b6';
             ctx.beginPath();
             ctx.arc(0, 0, b.radius, 0, Math.PI * 2);
             ctx.fill();
             ctx.strokeStyle = '#fff';
             ctx.lineWidth = 2;
             ctx.stroke();
-            // Hız çizgileri (yanlarda)
-            ctx.strokeStyle = '#00ffff';
-            ctx.lineWidth = 1;
+            // Göz
+            ctx.fillStyle = '#fff';
             ctx.beginPath();
-            ctx.moveTo(-10, -10);
-            ctx.lineTo(-20, -15);
-            ctx.moveTo(-10, 10);
-            ctx.lineTo(-20, 15);
-            ctx.stroke();
+            ctx.arc(8, -5, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(8, 5, 4, 0, Math.PI * 2);
+            ctx.fill();
             ctx.restore();
         });
 
-        // Hemşire bot
+        // Hemşire bot (pembe, artı işaretli ama klasik formda)
         if (hemsireAktif && hemsireBot && !hemsireBot.isDead) {
             const h = hemsireBot;
             ctx.save();
@@ -342,27 +377,27 @@
             ctx.fillStyle = '#2ecc71';
             ctx.fillRect(-20, -h.radius - 15, 40 * (h.hp / h.maxHp), 5);
             ctx.rotate(h.angle);
-            ctx.fillStyle = h.color;
+            ctx.fillStyle = '#ff69b4';
             ctx.beginPath();
             ctx.arc(0, 0, h.radius, 0, Math.PI * 2);
             ctx.fill();
             ctx.strokeStyle = '#fff';
             ctx.lineWidth = 2;
             ctx.stroke();
-            // Artı işareti
+            // Artı işareti (beyaz)
             ctx.strokeStyle = '#fff';
             ctx.lineWidth = 3;
             ctx.beginPath();
-            ctx.moveTo(0, -10);
-            ctx.lineTo(0, 10);
-            ctx.moveTo(-10, 0);
-            ctx.lineTo(10, 0);
+            ctx.moveTo(0, -8);
+            ctx.lineTo(0, 8);
+            ctx.moveTo(-8, 0);
+            ctx.lineTo(8, 0);
             ctx.stroke();
             ctx.restore();
         }
     };
 
-    // Mod seçim kartını ekle
+    // ========== MOD SEÇİM KARTI ==========
     window.addEventListener('DOMContentLoaded', function () {
         const track = document.getElementById('difficulty-track');
         if (track && !document.getElementById('diff-mutasyon')) {
@@ -376,12 +411,9 @@
             card.addEventListener('click', () => {
                 document.querySelectorAll('.diff-card').forEach(c => c.classList.remove('selected'));
                 card.classList.add('selected');
-                // Mod seçimini işaretle
                 window.GAME_MODE = MOD_ID;
-                // Zorluk değişkenini de ayarla (kolay/klasik fark etmez, mod öncelikli)
                 window.GAME_DIFFICULTY = 'normal';
             });
-            // Kaydırma ile seçim için tıklama yeterli
         }
     });
 
