@@ -1,9 +1,8 @@
-// ========== mod4.js (TAŞÇI) - PATLAYAN TAŞ AKSESUARI, TAŞ ZIRH, PARÇALANMA YAZISI KALDIRILDI ==========
-// - Aksesuar 1 (Patlayan Taş): Sonraki taş ve parçaları düşmana değince patlar,
-//   yakındaki düşmanlara 300 alan hasarı verir. Dolum süresi 17 saniye.
-// - Aksesuar 2 (Taş Zırh): 3 saniye boyunca alınan hasarların yarısı kadar iyileştirir.
-// - Parçalanma yazısı artık gösterilmiyor.
-// - Ulti can iyileştirmesi 250, ulti alanı %40 küçültülmüş.
+// ========== mod4.js (TAŞÇI) - EFEKT AZALTMA, PATLAMA EFEKTİ, GEÇMİŞ HASAR İYİLEŞTİRME ==========
+// - Taş/parça çarpma efektleri azaltıldı.
+// - Patlama efekti sadece genişleyen turuncu daire (ninja bomba gibi).
+// - Taş Zırh aksesuarı: son 3 saniyede alınan hasar kadar anında iyileştirir.
+// - Ulti alanı 108, iyileştirme 250.
 
 (function () {
     'use strict';
@@ -31,13 +30,12 @@
     const ULTI_DOLUM_LIMIT = 90;
 
     // Aksesuar 1: Patlayan Taş
-    const PATLAYAN_AKSESUAR_COOLDOWN = 1020; // 17 saniye (60fps)
+    const PATLAYAN_AKSESUAR_COOLDOWN = 1020; // 17 saniye
     const PATLAYAN_ALAN_HASAR = 300;
     const PATLAYAN_ALAN_YARICAP = 80;
 
-    // Aksesuar 2: Taş Zırh
-    const ZIRH_AKTIF_SURESI = 180; // 3 saniye
-    const ZIRH_COOLDOWN = 1200;     // 20 saniye
+    // Aksesuar 2: Taş Zırh (Geçmiş Hasar İyileştirme)
+    const ZIRH_COOLDOWN = 1200; // 20 saniye
 
     window.GAME_EXT.characters[CHAR_ID] = { color: CHAR_COLOR, hp: CHAR_HP, speed: CHAR_SPEED };
 
@@ -93,8 +91,7 @@
                 gadgetBtn2.classList.remove('cooldown');
             }
             this.tasciPatlayanHazir = false;
-            this.tasciZirhAktif = false;
-            this.tasciZirhSure = 0;
+            this.tasciHasarKayitlari = []; // son 3 saniyedeki hasarlar
             tasciKayalar = [];
             tasciParcalar = [];
             this.ultReady = false;
@@ -121,7 +118,7 @@
             hasar: TAS_HASAR,
             isDead: false,
             rotasyon: Math.random() * Math.PI * 2,
-            patlayan: patlayan, // aksesuar aktifse patlar
+            patlayan: patlayan,
             hitTargets: []
         });
 
@@ -148,14 +145,25 @@
         addFloatingNumber(this.x, this.y - 30, "AKSESUAR HAZIR!", CHAR_COLOR);
     };
 
-    // ---- Aksesuar 2: Taş Zırh ----
+    // ---- Aksesuar 2: Taş Zırh (Geçmiş Hasar İyileştirme) ----
     const originalActivateGadget2 = Player.prototype.activateGadget2;
     Player.prototype.activateGadget2 = function (a, pull) {
         if (this.charType !== CHAR_ID) return originalActivateGadget2.call(this, a, pull);
         if (!this.gadget2Ready || this.isDead) return;
 
-        this.tasciZirhAktif = true;
-        this.tasciZirhSure = ZIRH_AKTIF_SURESI;
+        const simdi = Date.now();
+        const toplamHasar = (this.tasciHasarKayitlari || [])
+            .filter(k => simdi - k.zaman < 3000)
+            .reduce((toplam, k) => toplam + k.miktar, 0);
+
+        if (toplamHasar > 0) {
+            this.hp = Math.min(this.maxHp, this.hp + toplamHasar);
+            addFloatingNumber(this.x, this.y - 30, "+" + toplamHasar, "#2ecc71");
+        } else {
+            addFloatingNumber(this.x, this.y - 30, "İYİLEŞME YOK", "#e74c3c");
+        }
+
+        this.tasciHasarKayitlari = [];
         this.gadget2Ready = false;
         this.gadget2Cooldown = ZIRH_COOLDOWN;
         if (gadgetBtn2) gadgetBtn2.classList.add('cooldown');
@@ -185,8 +193,8 @@
             const toplamCan = itilenDusmanSayisi * ULTI_CAN;
             player.hp = Math.min(player.maxHp, player.hp + toplamCan);
             addFloatingNumber(player.x, player.y - 30, "+" + toplamCan, "#2ecc71");
-            spawnParticles(this.x, this.y, '#8b5e3c', 'normal');
-            screenShake = 6;
+            // Ulti görseli basit tutuldu
+            screenShake = 4;
         }
         addFloatingNumber(this.x, this.y - 40, "SİSMİK DALGA!", CHAR_COLOR);
 
@@ -275,7 +283,7 @@
     }
     requestAnimationFrame(tasciLoop);
 
-    // ---- Parça oluşturma (parçalanma yazısı YOK) ----
+    // ---- Parça oluşturma (parçacık azaltıldı) ----
     function tasciParcala(tas) {
         const anaAci = Math.atan2(tas.vy, tas.vx);
         const acilar = [];
@@ -295,26 +303,30 @@
                 hasar: PARCA_HASAR,
                 isDead: false,
                 rotasyon: Math.random() * Math.PI * 2,
-                patlayan: tas.patlayan, // patlama özelliğini parçalara da taşı
+                patlayan: tas.patlayan,
                 hitTargets: []
             });
         });
-        for (let k = 0; k < 3; k++) {
+        // Çok az parçacık
+        for (let k = 0; k < 2; k++) {
             spawnParticles(tas.x, tas.y, '#8b5e3c', 'normal');
         }
-        // Parçalanma yazısı artık yok!
+        // "PARÇALANDI!" yazısı yok
     }
 
-    // ---- Patlama fonksiyonu ----
+    // ---- Patlama fonksiyonu (sadece turuncu daire efekti) ----
     function patlat(x, y) {
+        // Genişleyen daire efekti
+        explosions.push({x: x, y: y, radius: 10, maxRadius: 80, life: 15, maxLife: 15});
+        // Alan hasarı
         getActiveEnemies().forEach(e => {
             if (getDist({x, y}, e) <= PATLAYAN_ALAN_YARICAP + e.radius) {
                 e.hp -= PATLAYAN_ALAN_HASAR;
                 addFloatingNumber(e.x, e.y, PATLAYAN_ALAN_HASAR, "#e67e22");
-                spawnParticles(e.x, e.y, '#e67e22', 'normal');
+                // Hasar alan düşmana küçük bir parçacık bile vermeyelim
             }
         });
-        spawnParticles(x, y, '#e67e22', 'normal');
+        // Ekstra parçacık yok
     }
 
     // ---- Güncelleme ----
@@ -326,21 +338,13 @@
             if (gadgetBtn2 && gadgetBtn2.style.display !== 'flex') gadgetBtn2.style.display = 'flex';
         }
 
-        // Taş Zırh: hasar azaltma (iyileştirme)
-        if (player.charType === CHAR_ID && player.tasciZirhAktif) {
-            player.tasciZirhSure -= ts;
-            if (player.tasciZirhSure <= 0) {
-                player.tasciZirhAktif = false;
-                player.tasciZirhSure = 0;
-            } else {
-                // Önceki hp'ye göre hasar tespiti
-                const hpFarki = oncekiHp - player.hp;
-                if (hpFarki > 0) {
-                    const iyilesme = Math.floor(hpFarki * 0.5);
-                    player.hp = Math.min(player.maxHp, player.hp + iyilesme);
-                    if (iyilesme > 0) addFloatingNumber(player.x, player.y - 20, "+" + iyilesme, "#2ecc71");
-                }
-            }
+        // Hasar kayıtlarını güncelle (Taş Zırh için)
+        const hpFarki = oncekiHp - player.hp;
+        if (hpFarki > 0) {
+            player.tasciHasarKayitlari.push({zaman: Date.now(), miktar: hpFarki});
+            // 3 saniyeden eski kayıtları temizle
+            const simdi = Date.now();
+            player.tasciHasarKayitlari = player.tasciHasarKayitlari.filter(k => simdi - k.zaman < 3000);
         }
         oncekiHp = player.hp;
 
@@ -386,6 +390,7 @@
                 }
                 t.sekmeHakki--;
                 t.sx = t.x; t.sy = t.y;
+                // Sekme efektini de azalttık
                 spawnParticles(t.x, t.y, '#8b5e3c', 'normal');
             }
             else if ((hwX || hwY || hitObs)) {
@@ -408,7 +413,6 @@
                 if (getDist(t, e) < e.radius + 11) {
                     e.hp -= t.hasar;
                     addFloatingNumber(e.x, e.y, t.hasar, CHAR_COLOR);
-                    // Patlama kontrolü
                     if (t.patlayan) {
                         patlat(t.x, t.y);
                     }
@@ -446,7 +450,6 @@
                     e.hp -= p.hasar;
                     e._tasciBekleyenHasar = (e._tasciBekleyenHasar || 0) + p.hasar;
                     e._tasciSonHasarZamani = Date.now();
-                    // Patlama kontrolü
                     if (p.patlayan) {
                         patlat(p.x, p.y);
                     }
