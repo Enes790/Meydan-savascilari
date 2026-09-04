@@ -1,40 +1,38 @@
 // ============================================================================
-// KARAKTER: BUMERANGCI (mod2.js)
+// KARAKTER: BUMERANGCI (mod2.js) — v2 (düzeltmeler)
 // ----------------------------------------------------------------------------
-// Kuklacı (mod1.js) ile aynı yöntemle çalışır: Player.prototype fonksiyonlarını
-// sarmalar (monkey-patch), ana dosyaya hiç dokunmaz. Kendi mermi dizisini
-// (bBolts) ve kendi update/draw döngüsünü kullanır — ana dosyanın 'boomerang'
-// mermi tipine veya dmMap'ine bağımlı DEĞİLDİR, o yüzden çakışma riski yok.
-//
-// ÖZELLİKLER:
-// - Normal atış: tek bumerang, 800 hasar, gidip geri dönüyor
-// - Bumerang oyuncuya geri döndüğünde: +200 can
-// - Ulti: belli aralıklarla (art arda) 5 adet bumerang fırlatır, yelpaze açılı
-//
-// [VARSAYIM] etiketli değerler tahmini konuldu, istenirse tek satırla değişir.
+// BU SÜRÜMDE DÜZELTİLENLER:
+// 1) Ulti tuşu artık görünüyor: startGame yerine Player.prototype.setCharacter
+//    sarmalanıyor (ana dosya karakteri gerçekten bu fonksiyonla ayarlıyor).
+// 2) Bumerang artık en fazla 3 düşmana vurunca otomatik geri dönüyor
+//    (sınırsız tarama kalktı).
+// 3) Hasar 800 -> 650 düşürüldü.
+// 4) Bumerang artık engellere (obstacles) ve diken duvarlarına (cactusWalls)
+//    çarpıyor, çarpınca geri dönüyor (önceden sadece dış duvarları görüyordu).
 // ============================================================================
 
 (function () {
     'use strict';
 
-    const CHAR_ID = 'bumerangci';           // teknik isim - kodun içinde bu kullanılır
-    const CHAR_COLOR = '#16a085';           // [VARSAYIM] karakter rengi
+    const CHAR_ID = 'bumerangci';
+    const CHAR_COLOR = '#16a085';           // [VARSAYIM]
     const CHAR_HP = 3000;                   // [VARSAYIM]
     const CHAR_SPEED = 3.4;                 // [VARSAYIM]
 
-    const NORMAL_DAMAGE = 800;              // istenen: normal bumerang hasarı
-    const NORMAL_RANGE = RANGE;             // ana dosyadaki menzil sabitini kullanır
+    const NORMAL_DAMAGE = 650;              // güncellendi: 800 -> 650
+    const NORMAL_RANGE = RANGE;
     const NORMAL_SPEED = PLAYER_BULLET_SPEED;
-    const RETURN_HEAL = 200;                // istenen: geri dönünce +200 can
+    const RETURN_HEAL = 200;
+    const MAX_HITS_BEFORE_RETURN = 3;       // yeni: 3 düşmana vurunca geri döner
 
-    const ULTI_COUNT = 5;                   // istenen: ulti'de 5 bumerang
-    const ULTI_SPREAD = Math.PI / 3;        // [VARSAYIM] 60 derecelik yelpaze
-    const ULTI_STAGGER_FRAMES = 6;          // [VARSAYIM] her biri ~0.1sn arayla çıkar
+    const ULTI_COUNT = 5;
+    const ULTI_SPREAD = Math.PI / 3;        // [VARSAYIM]
+    const ULTI_STAGGER_FRAMES = 6;          // [VARSAYIM]
 
     window.GAME_EXT.characters[CHAR_ID] = { color: CHAR_COLOR, hp: CHAR_HP, speed: CHAR_SPEED };
 
-    let bBolts = [];      // aktif bumerang mermileri
-    let ultiQueue = [];   // ulti sırasında sırayla fırlatılacak bumerangların bekleme listesi
+    let bBolts = [];
+    let ultiQueue = [];
 
     function chainHook(name, fn) {
         const prev = window.GAME_EXT.hooks[name];
@@ -57,7 +55,6 @@
         });
     }
 
-    // --- Normal atış: tek bumerang ---
     const originalFire = Player.prototype.fire;
     Player.prototype.fire = function (a, pullOverride) {
         if (this.charType !== CHAR_ID) return originalFire.call(this, a, pullOverride);
@@ -65,7 +62,6 @@
         this.consumeAmmo();
     };
 
-    // --- Ulti: 5 bumerang, aralıklı, yelpaze açılı ---
     const originalFireUlti = Player.prototype.fireUlti;
     Player.prototype.fireUlti = function (a, pullOverride) {
         if (this.charType !== CHAR_ID) return originalFireUlti.call(this, a, pullOverride);
@@ -82,7 +78,6 @@
         if (ultiBtn) ultiBtn.classList.remove('ready');
     };
 
-    // --- Ulti şarjı: ana dosyanın listesi bu karakteri tanımadığı için sarmalamak gerekiyor ---
     const originalChargeUlti = window.chargeUlti;
     window.chargeUlti = function (amount) {
         if (player.charType !== CHAR_ID) return originalChargeUlti(amount);
@@ -96,15 +91,16 @@
         if (ultFill) ultFill.style.width = player.ultCharge + "%";
     };
 
-    // --- Ulti tuşunun görünmesi: startGame listesine bu karakter dahil değil, elle açıyoruz ---
-    const originalStartGame = window.startGame;
-    window.startGame = function () {
-        originalStartGame();
-        if (selectedCharacter === CHAR_ID && ultiBtn) ultiBtn.style.display = 'flex';
-        bBolts = []; ultiQueue = [];
+    // DÜZELTME 1: ulti butonu artık burada, gerçek karakter ayarlama anında açılıyor
+    const originalSetCharacter = Player.prototype.setCharacter;
+    Player.prototype.setCharacter = function (type) {
+        originalSetCharacter.call(this, type);
+        if (type === CHAR_ID) {
+            if (ultiBtn) ultiBtn.style.display = 'flex';
+            bBolts = []; ultiQueue = [];
+        }
     };
 
-    // --- Karakter seçim kartı ---
     const charContainer = document.querySelector('.char-select-container');
     if (charContainer && !document.getElementById('char-' + CHAR_ID)) {
         const card = document.createElement('div');
@@ -113,7 +109,7 @@
         card.innerHTML =
             '<div class="char-color-preview" style="background:' + CHAR_COLOR + ';"></div>' +
             '<span>Bumerangcı</span>' +
-            '<small>Hasar: 800<br>Güç: 5\'li Bumerang</small>';
+            '<small>Hasar: 650<br>Güç: 5\'li Bumerang</small>';
         charContainer.appendChild(card);
         card.addEventListener('click', () => {
             selectedCharacter = CHAR_ID;
@@ -126,7 +122,6 @@
         bBolts = []; ultiQueue = [];
     });
 
-    // --- Çizim: bumerangları döndürerek çiz ---
     chainHook('onDraw', function (ctx2) {
         bBolts.forEach(b => {
             ctx2.save();
@@ -144,7 +139,6 @@
         });
     });
 
-    // --- Kendi bağımsız güncelleme döngüsü (ana dosyanın bullets dizisine hiç dokunmuyor) ---
     let bLastTime = 0;
     function bLoop(t) {
         if (!bLastTime) bLastTime = t;
@@ -156,7 +150,6 @@
     requestAnimationFrame(bLoop);
 
     function bUpdate(ts) {
-        // Ulti kuyruğu: sırayla, aralıklı fırlatma
         for (let i = ultiQueue.length - 1; i >= 0; i--) {
             const q = ultiQueue[i];
             q.framesLeft -= ts;
@@ -171,12 +164,20 @@
 
             if (!b.returning) {
                 b.x += b.vx * ts; b.y += b.vy * ts;
+
                 const outOfRange = getDist(b, { x: b.sx, y: b.sy }) > NORMAL_RANGE;
                 const hitWall = b.x < WALL_THICKNESS + 5 || b.x > canvas.width - WALL_THICKNESS - 5 ||
                                  b.y < WALL_THICKNESS + 5 || b.y > canvas.height - WALL_THICKNESS - 5;
-                if (outOfRange || hitWall) {
+
+                // DÜZELTME 4: engellere (mor bariyer) ve diken duvarlarına da çarpışma kontrolü
+                let hitObstacle = false;
+                for (const o of obstacles.concat(cactusWalls || [])) {
+                    if (getDist(b, o) < o.radius + 5) { hitObstacle = true; break; }
+                }
+
+                if (outOfRange || hitWall || hitObstacle) {
                     b.returning = true;
-                    b.hitTargets = []; // dönüş yolunda tekrar vurabilsin diye sıfırlanıyor
+                    b.hitTargets = [];
                 }
             } else {
                 const ang = getAngle(b, player);
@@ -191,14 +192,20 @@
                 }
             }
 
-            getActiveEnemies().forEach(e => {
-                if (b.hitTargets.includes(e)) return;
-                if (getDist(b, e) < e.radius + 12) {
-                    e.hp -= NORMAL_DAMAGE;
-                    addFloatingNumber(e.x, e.y, NORMAL_DAMAGE, CHAR_COLOR);
-                    b.hitTargets.push(e);
-                }
-            });
+            // DÜZELTME 2: en fazla 3 düşmana vurunca otomatik geri dön
+            if (!b.returning) {
+                getActiveEnemies().forEach(e => {
+                    if (b.hitTargets.includes(e)) return;
+                    if (getDist(b, e) < e.radius + 12) {
+                        e.hp -= NORMAL_DAMAGE;
+                        addFloatingNumber(e.x, e.y, NORMAL_DAMAGE, CHAR_COLOR);
+                        b.hitTargets.push(e);
+                        if (b.hitTargets.length >= MAX_HITS_BEFORE_RETURN) {
+                            b.returning = true;
+                        }
+                    }
+                });
+            }
         }
     }
 
