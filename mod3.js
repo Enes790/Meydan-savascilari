@@ -1,11 +1,9 @@
-// ========== mod4.js (TAŞÇI) - SON DÜZELTMELER ==========
-// Karakter: Taşçı
-// Ana saldırı: Ağır taş atar (1500 hasar, 2 kez seker).
-// Menzil: 140
-// Taş engele çarpınca engele hasar verir (200) ve sekme hakkı varsa seker.
-// Parçalanma efekti çok hafifletildi.
-// Nişan çizgisi güzelleştirildi.
-// Taş ve parça hızları düşürüldü.
+// ========== mod4.js (TAŞÇI) - ULTİ CAN, TOPLU HASAR YAZISI, CEPHANE DÜZELTME ==========
+// - Ulti: Sismik Dalga artık alandaki her düşmana 500 hasar verir, hafifçe iter
+//   ve itilen her düşman için oyuncuya +200 can kazandırır.
+// - Parça hasar yazıları birleştirildi: aynı düşmana kısa sürede çarpan
+//   parçalar tek bir toplam sayı olarak gösterilir.
+// - Nişan alırken cephane barı bozulması düzeltildi.
 
 (function () {
     'use strict';
@@ -17,14 +15,19 @@
 
     const TAS_MENZIL = 140;
     const TAS_HASAR = 1500;
-    const TAS_HIZ = PLAYER_BULLET_SPEED * 0.65; // hız düşürüldü
+    const TAS_HIZ = PLAYER_BULLET_SPEED * 0.65;
     const TAS_SEKME_HAKKI = 2;
     const ENGELE_HASAR = 200;
     const PARCA_HASAR = 200;
     const PARCA_SAYISI = 9;
-    const PARCA_HIZ = PLAYER_BULLET_SPEED * 0.55; // parça hızı düşürüldü
+    const PARCA_HIZ = PLAYER_BULLET_SPEED * 0.55;
     const PARCA_MENZIL = 90;
     const PARCA_MAX_ACI = Math.PI / 3;
+
+    const ULTI_YARICAP = 180;
+    const ULTI_TABAN_HASAR = 500;
+    const ULTI_KNOCKBACK = 25;
+    const ULTI_CAN = 200; // itilen düşman başına kazanılacak can
 
     window.GAME_EXT.characters[CHAR_ID] = { color: CHAR_COLOR, hp: CHAR_HP, speed: CHAR_SPEED };
 
@@ -40,7 +43,7 @@
         card.innerHTML =
             '<div class="char-color-preview" style="background:' + CHAR_COLOR + ';"></div>' +
             '<span>Taşçı</span>' +
-            '<small>Hasar: 1500<br>Parçalanan Taş</small>';
+            '<small>Hasar: 1500<br>Ulti: Sismik Dalga</small>';
         container.appendChild(card);
         card.addEventListener('click', () => {
             selectedCharacter = CHAR_ID;
@@ -68,11 +71,14 @@
     Player.prototype.setCharacter = function (type) {
         originalSetCharacter.call(this, type);
         if (type === CHAR_ID) {
-            if (ultiBtn) ultiBtn.style.display = 'none';
             if (gadgetBtn) gadgetBtn.style.display = 'none';
             if (gadgetBtn2) gadgetBtn2.style.display = 'none';
             tasciKayalar = [];
             tasciParcalar = [];
+            this.ultReady = false;
+            this.ultCharge = 0;
+            if (ultFill) ultFill.style.width = "0%";
+            if (ultiBtn) ultiBtn.classList.remove('ready');
         }
     };
 
@@ -94,6 +100,58 @@
         });
         this.consumeAmmo();
         this.lastShotTime = Date.now();
+    };
+
+    // ---- FireUlti override: Sismik Dalga (can versiyonu) ----
+    const originalFireUlti = Player.prototype.fireUlti;
+    Player.prototype.fireUlti = function (a) {
+        if (this.charType !== CHAR_ID) return originalFireUlti.call(this, a);
+        if (!this.ultReady || this.isDead) return;
+
+        let itilenDusmanSayisi = 0;
+        getActiveEnemies().forEach(e => {
+            if (getDist(this, e) <= ULTI_YARICAP) {
+                // Taban hasar
+                e.hp -= ULTI_TABAN_HASAR;
+                addFloatingNumber(e.x, e.y, ULTI_TABAN_HASAR, CHAR_COLOR);
+
+                // Geri itme
+                const ang = getAngle(this, e);
+                e.kbX = Math.cos(ang) * ULTI_KNOCKBACK;
+                e.kbY = Math.sin(ang) * ULTI_KNOCKBACK;
+
+                itilenDusmanSayisi++;
+            }
+        });
+
+        // İtilen her düşman için +200 can
+        if (itilenDusmanSayisi > 0) {
+            const toplamCan = itilenDusmanSayisi * ULTI_CAN;
+            player.hp = Math.min(player.maxHp, player.hp + toplamCan);
+            addFloatingNumber(player.x, player.y - 30, "+" + toplamCan, "#2ecc71");
+            spawnParticles(this.x, this.y, '#8b5e3c', 'normal');
+            screenShake = 6;
+        }
+        addFloatingNumber(this.x, this.y - 40, "SİSMİK DALGA!", CHAR_COLOR);
+
+        this.ultReady = false;
+        this.ultCharge = 0;
+        if (ultFill) ultFill.style.width = "0%";
+        if (ultiBtn) ultiBtn.classList.remove('ready');
+    };
+
+    // ---- chargeUlti override ----
+    const originalChargeUlti = window.chargeUlti;
+    window.chargeUlti = function (amount) {
+        if (player.charType !== CHAR_ID) return originalChargeUlti(amount);
+        if (!gameStarted || player.ultReady) return;
+        player.ultCharge = Math.min(100, player.ultCharge + amount);
+        if (player.ultCharge === 100) {
+            player.ultReady = true;
+            if (ultiBtn) ultiBtn.classList.add('ready');
+            addFloatingNumber(player.x, player.y - 40, "GÜÇ HAZIR!", "#f1c40f");
+        }
+        if (ultFill) ultFill.style.width = player.ultCharge + "%";
     };
 
     // ---- Reset hook ----
@@ -182,7 +240,6 @@
                 rotasyon: Math.random() * Math.PI * 2
             });
         });
-        // Çok hafif parçacık (3 adet)
         for (let k = 0; k < 3; k++) {
             spawnParticles(tas.x, tas.y, '#8b5e3c', 'normal');
         }
@@ -191,6 +248,19 @@
 
     // ---- Güncelleme ----
     function tasciUpdate(ts) {
+        // Ulti butonunu her karede zorla açık tut
+        if (player.charType === CHAR_ID && ultiBtn && ultiBtn.style.display !== 'flex') {
+            ultiBtn.style.display = 'flex';
+        }
+
+        // Toplu parça hasar yazılarını kontrol et
+        getActiveEnemies().forEach(e => {
+            if (e._tasciBekleyenHasar > 0 && Date.now() - e._tasciSonHasarZamani > 50) {
+                addFloatingNumber(e.x, e.y, e._tasciBekleyenHasar, "#8b5e3c");
+                e._tasciBekleyenHasar = 0;
+            }
+        });
+
         for (let i = tasciKayalar.length - 1; i >= 0; i--) {
             const t = tasciKayalar[i];
             if (t.isDead) { tasciKayalar.splice(i, 1); continue; }
@@ -212,7 +282,6 @@
                 if (hitObs) {
                     if (hitObs.hp !== undefined) hitObs.hp -= ENGELE_HASAR;
                     addFloatingNumber(hitObs.x, hitObs.y, ENGELE_HASAR, "#8b5e3c");
-                    // Yansıma
                     const dx = t.x - hitObs.x;
                     const dy = t.y - hitObs.y;
                     const d = Math.max(1, Math.hypot(dx, dy));
@@ -252,6 +321,7 @@
             });
         }
 
+        // Parçalar
         for (let i = tasciParcalar.length - 1; i >= 0; i--) {
             const p = tasciParcalar[i];
             if (p.isDead) { tasciParcalar.splice(i, 1); continue; }
@@ -275,7 +345,9 @@
             getActiveEnemies().forEach(e => {
                 if (!vurdu && getDist(p, e) < e.radius + 8) {
                     e.hp -= p.hasar;
-                    addFloatingNumber(e.x, e.y, p.hasar, "#8b5e3c");
+                    // Hasar yazısını biriktir
+                    e._tasciBekleyenHasar = (e._tasciBekleyenHasar || 0) + p.hasar;
+                    e._tasciSonHasarZamani = Date.now();
                     spawnParticles(e.x, e.y, '#8b5e3c', 'normal');
                     vurdu = true;
                     p.isDead = true;
@@ -284,28 +356,27 @@
         }
     }
 
-    // ---- Nişan çizgisi ----
+    // ---- Nişan çizgisi (cephane barı düzeltildi) ----
     const originalDraw = window.draw;
     window.draw = function() {
         if (player.charType === CHAR_ID && aimData.active && player.ammo >= 1 && !player.isDead) {
-            const geciciAmmo = player.ammo;
-            player.ammo = 0;
+            // Orijinal nişan çizgisini engellemek için aimData.active'ı geçici false yap
+            const geciciAimAktif = aimData.active;
+            aimData.active = false;
             originalDraw();
-            player.ammo = geciciAmmo;
+            aimData.active = geciciAimAktif;
 
+            // Kendi nişan çizgimizi çiz
             ctx.save();
             ctx.translate(player.x, player.y);
             ctx.rotate(aimData.angle);
-            // Yarı saydam dolgu
             ctx.fillStyle = 'rgba(139, 94, 60, 0.15)';
             ctx.fillRect(0, -5, TAS_MENZIL, 10);
-            // Kesikli çizgi
             ctx.strokeStyle = 'rgba(139, 94, 60, 0.8)';
             ctx.lineWidth = 2;
             ctx.setLineDash([8, 6]);
             ctx.strokeRect(0, -5, TAS_MENZIL, 10);
             ctx.setLineDash([]);
-            // Menzil sonu taş simgesi
             ctx.beginPath();
             ctx.arc(TAS_MENZIL, 0, 8, 0, Math.PI * 2);
             ctx.fillStyle = '#8b5e3c';
@@ -313,7 +384,6 @@
             ctx.strokeStyle = '#3e2710';
             ctx.lineWidth = 2;
             ctx.stroke();
-            // İç parlama
             ctx.beginPath();
             ctx.arc(TAS_MENZIL, 0, 3, 0, Math.PI * 2);
             ctx.fillStyle = '#d4a574';
