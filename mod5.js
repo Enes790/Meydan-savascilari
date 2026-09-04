@@ -1,25 +1,29 @@
-// ========== mod5.js (ÇARPIŞÇI) ==========
+// ========== mod5.js (ÇARPIŞÇI) - GÜNCELLENMİŞ ==========
 // Karakter: Çarpışçı
 // Ana saldırı: Mermi atmaz, Devko menzili kadar (95) dash yapar.
-// Dash sonunda 95 yarıçaplı alanda 800 hasar verir.
-// Dash sırasında temas ettiği her düşman için +200 can kazanır.
-// Ulti: yok, Aksesuar: yok.
+// Dash sonunda 70 yarıçaplı alanda 550 hasar verir.
+// Dash sırasında temas ettiği her düşmana 400 hasar verir ve +200 can kazanır.
+// Alan hasarında vurduğu her düşman başına +150 can kazanır.
+// Cephane: 3, dolum normalden hızlı.
+// Can: 3000.
 
 (function () {
     'use strict';
 
     const CHAR_ID = 'carpisci';
     const CHAR_COLOR = '#ff6b35';
-    const CHAR_HP = 3600;
+    const CHAR_HP = 3000;
     const CHAR_SPEED = 4.0;
 
-    const DASH_MESAFE = 95;          // Devko'nun saldırı menzili
-    const ALAN_HASAR = 800;
-    const ALAN_YARICAP = 95;
-    const DASH_HIZ = 8;              // birim/frame
-    const TEMAS_CAN = 200;
-    const CEPhane_MAKS = 2;
-    const RELOAD_SPEED = 0.01;
+    const DASH_MESAFE = 95;
+    const ALAN_HASAR = 550;
+    const ALAN_YARICAP = 70;          // küçültüldü
+    const DASH_HIZ = 8;
+    const DASH_VURUS_HASAR = 400;     // dash temas hasarı
+    const DASH_TEMAS_CAN = 200;       // dash temas canı
+    const ALAN_BASINA_CAN = 150;      // alan vuruşu başına can
+    const CEPhane_MAKS = 3;
+    const RELOAD_SPEED = 0.025;       // normalden hızlı
 
     window.GAME_EXT.characters[CHAR_ID] = { color: CHAR_COLOR, hp: CHAR_HP, speed: CHAR_SPEED };
 
@@ -32,7 +36,7 @@
         card.innerHTML =
             '<div class="char-color-preview" style="background:' + CHAR_COLOR + ';"></div>' +
             '<span>Çarpışçı</span>' +
-            '<small>Hasar: 800 (alan)<br>Dash + Temas Canı</small>';
+            '<small>Hasar: 550 (alan)<br>Dash + Temas Canı</small>';
         container.appendChild(card);
         card.addEventListener('click', () => {
             selectedCharacter = CHAR_ID;
@@ -53,7 +57,6 @@
             this.carpisciDashYon = 0;
             this.carpisciDashKalan = 0;
             this.carpisciTemasEdilenler = [];
-            // Butonları gizle
             if (ultiBtn) ultiBtn.style.display = 'none';
             if (gadgetBtn) gadgetBtn.style.display = 'none';
             if (gadgetBtn2) gadgetBtn2.style.display = 'none';
@@ -72,7 +75,6 @@
         this.carpisciTemasEdilenler = [];
         this.consumeAmmo();
         this.lastShotTime = Date.now();
-        addFloatingNumber(this.x, this.y - 30, "ÇARPIŞ!", CHAR_COLOR);
     };
 
     // ---- window.update override ----
@@ -86,55 +88,62 @@
             const dx = Math.cos(p.carpisciDashYon) * DASH_HIZ * ts;
             const dy = Math.sin(p.carpisciDashYon) * DASH_HIZ * ts;
 
-            // Dash mesafesini azalt
             p.carpisciDashKalan -= Math.hypot(dx, dy);
             p.x += dx;
             p.y += dy;
-
-            // Sınırlara çarpma (duvarlar)
             p.x = clampPos(p.x, p.radius + WALL_THICKNESS, canvas.width - p.radius - WALL_THICKNESS);
             p.y = clampPos(p.y, p.radius + WALL_THICKNESS, canvas.height - p.radius - WALL_THICKNESS);
 
-            // Dash sırasında temas hasarı ve can kazanma
             getActiveEnemies().forEach(e => {
                 if (e.isDead) return;
                 if (!p.carpisciTemasEdilenler.includes(e) && getDist(p, e) < p.radius + e.radius) {
                     p.carpisciTemasEdilenler.push(e);
-                    p.hp = Math.min(p.maxHp, p.hp + TEMAS_CAN);
-                    addFloatingNumber(p.x, p.y - 20, "+" + TEMAS_CAN, "#2ecc71");
+                    e.hp -= DASH_VURUS_HASAR;
+                    addFloatingNumber(e.x, e.y, DASH_VURUS_HASAR, CHAR_COLOR);
+                    p.hp = Math.min(p.maxHp, p.hp + DASH_TEMAS_CAN);
+                    addFloatingNumber(p.x, p.y - 20, "+" + DASH_TEMAS_CAN, "#2ecc71");
                 }
             });
 
-            // Dash bitti mi?
             if (p.carpisciDashKalan <= 0) {
                 p.carpisciDashAktif = false;
-                // Alan hasarı ver
+                // Alan hasarı
+                let vurulanDusman = 0;
                 getActiveEnemies().forEach(e => {
                     if (getDist(p, e) <= ALAN_YARICAP + e.radius) {
                         e.hp -= ALAN_HASAR;
                         addFloatingNumber(e.x, e.y, ALAN_HASAR, CHAR_COLOR);
+                        vurulanDusman++;
                     }
                 });
-                // Görsel efekt: genişleyen daire
+                if (vurulanDusman > 0) {
+                    const toplamCan = vurulanDusman * ALAN_BASINA_CAN;
+                    p.hp = Math.min(p.maxHp, p.hp + toplamCan);
+                    addFloatingNumber(p.x, p.y - 30, "+" + toplamCan, "#2ecc71");
+                }
+                // Animasyonlu alan efekti: iç içe 2 genişleyen daire
                 explosions.push({x: p.x, y: p.y, radius: 10, maxRadius: ALAN_YARICAP, life: 15, maxLife: 15});
-                // Hafif parçacık
-                for (let k = 0; k < 5; k++) {
+                explosions.push({x: p.x, y: p.y, radius: 5, maxRadius: ALAN_YARICAP * 0.7, life: 20, maxLife: 20});
+                for (let k = 0; k < 8; k++) {
                     const ang = Math.random() * Math.PI * 2;
-                    spawnParticles(p.x + Math.cos(ang) * 20, p.y + Math.sin(ang) * 20, CHAR_COLOR, 'normal');
+                    const dist = Math.random() * ALAN_YARICAP;
+                    spawnParticles(p.x + Math.cos(ang) * dist, p.y + Math.sin(ang) * dist, CHAR_COLOR, 'normal');
                 }
                 screenShake = 5;
-                addFloatingNumber(p.x, p.y - 40, "ŞOK DALGASI!", CHAR_COLOR);
             }
         }
     };
 
-    // ---- Nişan çizgisi ----
+    // ---- Nişan çizgisi (orijinali engelle) ----
     const originalDraw = window.draw;
     window.draw = function () {
-        originalDraw();
-        if (!gameStarted) return;
-
+        // Çarpışçı nişan alırken orijinal çizgiyi kapat
         if (player.charType === CHAR_ID && aimData.active && player.ammo >= 1 && !player.isDead) {
+            const geciciAim = aimData.active;
+            aimData.active = false;
+            originalDraw();
+            aimData.active = geciciAim;
+
             ctx.save();
             ctx.translate(player.x, player.y);
             ctx.rotate(aimData.angle);
@@ -146,7 +155,7 @@
             ctx.setLineDash([8, 6]);
             ctx.strokeRect(0, -5, DASH_MESAFE, 10);
             ctx.setLineDash([]);
-            // Hedef noktada alan göstergesi
+            // Hedef noktada alan göstergesi (küçültülmüş)
             ctx.beginPath();
             ctx.arc(DASH_MESAFE, 0, ALAN_YARICAP, 0, Math.PI * 2);
             ctx.fillStyle = 'rgba(255, 107, 53, 0.2)';
@@ -155,6 +164,8 @@
             ctx.lineWidth = 2;
             ctx.stroke();
             ctx.restore();
+        } else {
+            originalDraw();
         }
     };
 })();
