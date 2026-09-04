@@ -1,8 +1,11 @@
-// ========== mod4.js (TAŞÇI) - EFEKT AZALTMA, PATLAMA EFEKTİ, GEÇMİŞ HASAR İYİLEŞTİRME ==========
-// - Taş/parça çarpma efektleri azaltıldı.
-// - Patlama efekti sadece genişleyen turuncu daire (ninja bomba gibi).
-// - Taş Zırh aksesuarı: son 3 saniyede alınan hasar kadar anında iyileştirir.
-// - Ulti alanı 108, iyileştirme 250.
+// ========== mod4.js (TAŞÇI) - FİNAL DENGE ==========
+// - Menzil %10 azaltıldı: 140 -> 126
+// - Taş hızı hafif düşürüldü: 0.65x -> 0.6x
+// - Parça açısı artırıldı: 60° -> 75°
+// - Ulti vurduğu her düşman başına ultiyi %10 doldurur
+// - Ultiye özel efekt eklendi (iç içe 2 genişleyen daire + hafif parçacık)
+// - Taş Zırh: son 3 saniyede hasar alınmadıysa aksesuar boşa gitmez, beklemede kalır
+// - Taş Zırh basılınca küçük animasyon (taş halkası)
 
 (function () {
     'use strict';
@@ -12,30 +15,31 @@
     const CHAR_HP = 3400;
     const CHAR_SPEED = 3.6;
 
-    const TAS_MENZIL = 140;
+    const TAS_MENZIL = 126;              // %10 azaltıldı
     const TAS_HASAR = 1650;
-    const TAS_HIZ = PLAYER_BULLET_SPEED * 0.65;
+    const TAS_HIZ = PLAYER_BULLET_SPEED * 0.6; // hafif nerf
     const TAS_SEKME_HAKKI = 10;
     const ENGELE_HASAR = 50;
     const PARCA_HASAR = 350;
     const PARCA_SAYISI = 9;
     const PARCA_HIZ = PLAYER_BULLET_SPEED * 0.55;
     const PARCA_MENZIL = 90;
-    const PARCA_MAX_ACI = Math.PI / 3;
+    const PARCA_MAX_ACI = Math.PI * 0.416; // 75 derece
 
     const ULTI_YARICAP = 108;
     const ULTI_TABAN_HASAR = 700;
     const ULTI_KNOCKBACK = 25;
     const ULTI_CAN = 350;
     const ULTI_DOLUM_LIMIT = 90;
+    const ULTI_HIT_DOLUM = 10; // vurduğu düşman başına %10 dolum
 
     // Aksesuar 1: Patlayan Taş
-    const PATLAYAN_AKSESUAR_COOLDOWN = 1020; // 17 saniye
+    const PATLAYAN_AKSESUAR_COOLDOWN = 1020;
     const PATLAYAN_ALAN_HASAR = 300;
     const PATLAYAN_ALAN_YARICAP = 80;
 
     // Aksesuar 2: Taş Zırh (Geçmiş Hasar İyileştirme)
-    const ZIRH_COOLDOWN = 1200; // 20 saniye
+    const ZIRH_COOLDOWN = 1200;
 
     window.GAME_EXT.characters[CHAR_ID] = { color: CHAR_COLOR, hp: CHAR_HP, speed: CHAR_SPEED };
 
@@ -52,7 +56,7 @@
         card.innerHTML =
             '<div class="char-color-preview" style="background:' + CHAR_COLOR + ';"></div>' +
             '<span>Taşçı</span>' +
-            '<small>Hasar: 1500<br>Ulti: Sismik Dalga<br>Aksesuar: Patlayan Taş, Taş Zırh</small>';
+            '<small>Hasar: 1650<br>Ulti: Sismik Dalga<br>Aksesuar: Patlayan Taş, Taş Zırh</small>';
         container.appendChild(card);
         card.addEventListener('click', () => {
             selectedCharacter = CHAR_ID;
@@ -91,7 +95,8 @@
                 gadgetBtn2.classList.remove('cooldown');
             }
             this.tasciPatlayanHazir = false;
-            this.tasciHasarKayitlari = []; // son 3 saniyedeki hasarlar
+            this.tasciHasarKayitlari = [];
+            this.tasciZirhAnimasyon = 0;
             tasciKayalar = [];
             tasciParcalar = [];
             this.ultReady = false;
@@ -145,7 +150,7 @@
         addFloatingNumber(this.x, this.y - 30, "AKSESUAR HAZIR!", CHAR_COLOR);
     };
 
-    // ---- Aksesuar 2: Taş Zırh (Geçmiş Hasar İyileştirme) ----
+    // ---- Aksesuar 2: Taş Zırh (Geçmiş Hasar İyileştirme, boşa gitmez) ----
     const originalActivateGadget2 = Player.prototype.activateGadget2;
     Player.prototype.activateGadget2 = function (a, pull) {
         if (this.charType !== CHAR_ID) return originalActivateGadget2.call(this, a, pull);
@@ -159,16 +164,19 @@
         if (toplamHasar > 0) {
             this.hp = Math.min(this.maxHp, this.hp + toplamHasar);
             addFloatingNumber(this.x, this.y - 30, "+" + toplamHasar, "#2ecc71");
+            this.tasciHasarKayitlari = [];
+            this.gadget2Ready = false;
+            this.gadget2Cooldown = ZIRH_COOLDOWN;
+            if (gadgetBtn2) gadgetBtn2.classList.add('cooldown');
+            if (gadgetTimerText2) gadgetTimerText2.innerText = Math.ceil(ZIRH_COOLDOWN / 60) + "s";
+            // Animasyon başlat
+            this.tasciZirhAnimasyon = 30; // 0.5 saniye
+            addFloatingNumber(this.x, this.y - 40, "TAŞ ZIRH!", CHAR_COLOR);
         } else {
-            addFloatingNumber(this.x, this.y - 30, "İYİLEŞME YOK", "#e74c3c");
+            // Hasar alınmadıysa aksesuar boşa gitmesin, beklemede kalsın
+            addFloatingNumber(this.x, this.y - 30, "HASAR ALINMADI", "#e74c3c");
+            // Cooldown yok, gadget2Ready true kalır
         }
-
-        this.tasciHasarKayitlari = [];
-        this.gadget2Ready = false;
-        this.gadget2Cooldown = ZIRH_COOLDOWN;
-        if (gadgetBtn2) gadgetBtn2.classList.add('cooldown');
-        if (gadgetTimerText2) gadgetTimerText2.innerText = Math.ceil(ZIRH_COOLDOWN / 60) + "s";
-        addFloatingNumber(this.x, this.y - 30, "TAŞ ZIRH!", CHAR_COLOR);
     };
 
     // ---- FireUlti override: Sismik Dalga ----
@@ -189,13 +197,34 @@
             }
         });
 
+        // Can kazanma
         if (itilenDusmanSayisi > 0) {
             const toplamCan = itilenDusmanSayisi * ULTI_CAN;
             player.hp = Math.min(player.maxHp, player.hp + toplamCan);
             addFloatingNumber(player.x, player.y - 30, "+" + toplamCan, "#2ecc71");
-            // Ulti görseli basit tutuldu
-            screenShake = 4;
         }
+
+        // Ulti dolumu: vurduğu her düşman başına %10 doldur
+        if (itilenDusmanSayisi > 0) {
+            const dolum = itilenDusmanSayisi * ULTI_HIT_DOLUM;
+            player.ultCharge = Math.min(100, player.ultCharge + dolum);
+            if (player.ultCharge >= ULTI_DOLUM_LIMIT && !player.ultReady) {
+                player.ultReady = true;
+                if (ultiBtn) ultiBtn.classList.add('ready');
+                addFloatingNumber(player.x, player.y - 50, "GÜÇ HAZIR!", "#f1c40f");
+            }
+            if (ultFill) ultFill.style.width = player.ultCharge + "%";
+        }
+
+        // Ultiye özel efekt: iç içe 2 genişleyen daire + hafif parçacık
+        explosions.push({x: this.x, y: this.y, radius: 10, maxRadius: ULTI_YARICAP, life: 15, maxLife: 15});
+        explosions.push({x: this.x, y: this.y, radius: 5, maxRadius: ULTI_YARICAP * 0.7, life: 20, maxLife: 20});
+        for (let k = 0; k < 8; k++) {
+            const ang = Math.random() * Math.PI * 2;
+            const dist = Math.random() * ULTI_YARICAP;
+            spawnParticles(this.x + Math.cos(ang) * dist, this.y + Math.sin(ang) * dist, CHAR_COLOR, 'normal');
+        }
+        screenShake = 8;
         addFloatingNumber(this.x, this.y - 40, "SİSMİK DALGA!", CHAR_COLOR);
 
         this.ultReady = false;
@@ -227,6 +256,25 @@
 
     // ---- Draw hook ----
     chainHook('onDraw', function (ctx2) {
+        // Taş Zırh animasyonu (taş halkası)
+        if (player.charType === CHAR_ID && player.tasciZirhAnimasyon > 0) {
+            const p = player;
+            const alpha = Math.min(1, p.tasciZirhAnimasyon / 30);
+            ctx2.save();
+            ctx2.translate(p.x, p.y);
+            ctx2.rotate(Date.now() / 300);
+            for (let i = 0; i < 6; i++) {
+                const ang = (i / 6) * Math.PI * 2;
+                const r = 24;
+                ctx2.beginPath();
+                ctx2.arc(Math.cos(ang) * r, Math.sin(ang) * r, 4, 0, Math.PI * 2);
+                ctx2.fillStyle = CHAR_COLOR;
+                ctx2.globalAlpha = alpha * 0.7;
+                ctx2.fill();
+            }
+            ctx2.restore();
+        }
+
         tasciKayalar.forEach(b => {
             ctx2.save();
             ctx2.translate(b.x, b.y);
@@ -307,42 +355,40 @@
                 hitTargets: []
             });
         });
-        // Çok az parçacık
         for (let k = 0; k < 2; k++) {
             spawnParticles(tas.x, tas.y, '#8b5e3c', 'normal');
         }
-        // "PARÇALANDI!" yazısı yok
     }
 
-    // ---- Patlama fonksiyonu (sadece turuncu daire efekti) ----
+    // ---- Patlama fonksiyonu ----
     function patlat(x, y) {
-        // Genişleyen daire efekti
         explosions.push({x: x, y: y, radius: 10, maxRadius: 80, life: 15, maxLife: 15});
-        // Alan hasarı
         getActiveEnemies().forEach(e => {
             if (getDist({x, y}, e) <= PATLAYAN_ALAN_YARICAP + e.radius) {
                 e.hp -= PATLAYAN_ALAN_HASAR;
                 addFloatingNumber(e.x, e.y, PATLAYAN_ALAN_HASAR, "#e67e22");
-                // Hasar alan düşmana küçük bir parçacık bile vermeyelim
             }
         });
-        // Ekstra parçacık yok
     }
 
     // ---- Güncelleme ----
     function tasciUpdate(ts) {
-        // Butonları zorla göster
         if (player.charType === CHAR_ID) {
             if (ultiBtn && ultiBtn.style.display !== 'flex') ultiBtn.style.display = 'flex';
             if (gadgetBtn && gadgetBtn.style.display !== 'flex') gadgetBtn.style.display = 'flex';
             if (gadgetBtn2 && gadgetBtn2.style.display !== 'flex') gadgetBtn2.style.display = 'flex';
+
+            // Taş Zırh animasyon süresi
+            if (player.tasciZirhAnimasyon > 0) {
+                player.tasciZirhAnimasyon -= ts;
+                if (player.tasciZirhAnimasyon < 0) player.tasciZirhAnimasyon = 0;
+            }
         }
 
-        // Hasar kayıtlarını güncelle (Taş Zırh için)
+        // Hasar kayıtları
         const hpFarki = oncekiHp - player.hp;
         if (hpFarki > 0) {
             player.tasciHasarKayitlari.push({zaman: Date.now(), miktar: hpFarki});
-            // 3 saniyeden eski kayıtları temizle
             const simdi = Date.now();
             player.tasciHasarKayitlari = player.tasciHasarKayitlari.filter(k => simdi - k.zaman < 3000);
         }
@@ -390,7 +436,6 @@
                 }
                 t.sekmeHakki--;
                 t.sx = t.x; t.sy = t.y;
-                // Sekme efektini de azalttık
                 spawnParticles(t.x, t.y, '#8b5e3c', 'normal');
             }
             else if ((hwX || hwY || hitObs)) {
@@ -405,7 +450,6 @@
                 continue;
             }
 
-            // Düşmana çarpma
             let vurdu = false;
             getActiveEnemies().forEach(e => {
                 if (t.isDead || vurdu) return;
@@ -460,7 +504,7 @@
         }
     }
 
-    // ---- Nişan çizgisi (cephane barı düzeltildi) ----
+    // ---- Nişan çizgisi ----
     const originalDraw = window.draw;
     window.draw = function() {
         if (player.charType === CHAR_ID && aimData.active && player.ammo >= 1 && !player.isDead) {
