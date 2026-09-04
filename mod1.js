@@ -1,70 +1,69 @@
 // ============================================================================
-// KARAKTER: KUKLACI (character-kuklaci.js)
+// KARAKTER: KUKLACI (mod1.js) — v2 (düzeltmeler)
 // ----------------------------------------------------------------------------
-// Bu dosya ana oyun dosyasına (index.html) HİÇ dokunmadan, ayrı bir
-// <script src="character-kuklaci.js"></script> etiketiyle </body>'den önce
-// eklenir. Ana dosyanın kendisiyle AYNI global scope'u paylaştığı için
-// (klasik <script> etiketleri, module değil) ana dosyadaki top-level
-// const/let/function/class tanımlarına (player, bullets, getDist, canvas,
-// chargeUlti, vb.) doğrudan erişebiliyoruz.
+// Ana dosyaya dokunulmadan, ayrı script olarak çalışır.
 //
-// NEDEN PROTOTİP SARMALAMA (OVERRIDE) KULLANIYORUZ:
-// Ana dosyadaki GAME_EXT sistemi karakterler için sadece STAT (hp/hız/renk)
-// kaydı sağlıyor; yetenek DAVRANIŞI için hook yok (bu, önceki konuşmalarda
-// tespit ettiğimiz bilinen bir sınır). Bu yüzden Player.prototype.fire,
-// fireUlti gibi metodları SARMALAYIP (eskisini saklayıp, sadece kendi
-// charType'ımız için farklı davranıp diğer her şeyi olduğu gibi asıl
-// fonksiyona yönlendirerek) çalışıyoruz. Bu kırılgan bir yöntemdir: ana
-// dosya ileride bu metodları değiştirirse, bu sarmalama o değişikliği
-// görmez. Karakter davranışı için gerçek bir hook sistemi eklenene kadar
-// bilinen/kabul edilmiş bir risktir.
+// BU SÜRÜMDE DÜZELTİLENLER:
+// 1) Alan yığılma hatası: kFieldActive artık ATIŞ ANINDA işaretleniyor
+//    (mermi düşmeden önce ikinci atış yapılırsa da doğru "basit" davranıyor).
+// 2) Ulti mesafe okuma hatası: ultiBtn'in sürükleme mesafesi (ultAim.pull)
+//    ana dosyanın actionFunc'ı tarafından fireUlti'ye iletilmiyordu (sadece
+//    açı iletiliyordu). Artık ultAim.pull DOĞRUDAN paylaşılan objeden
+//    okunuyor, parametre olarak gelmese bile.
+//    NOT: Kirpi'nin ultisi aslında ultiBtn'e basılı tutup sürüklemekle değil,
+//    "ultiBtn'e dokun -> hazırlık moduna gir -> normal ateş kontrolüyle
+//    (sağ joystick/fare) nişan al ve fırlat" şeklinde çalışıyor. Bu akış ana
+//    dosyada ultiBtn'e ÖZEL, halihazırda bağlanmış (ve dışarıdan
+//    değiştirilemeyen) bir olay dinleyicisiyle kilitli. Bu yüzden BİREBİR
+//    aynı etkileşimi dışarıdan bir script ile kuramadım - ana dosyaya
+//    dokunmadan mümkün değil. Bunun yerine ultiBtn'i basılı tutup sürükleme
+//    ile mesafe seçme (işlevsel olarak aynı sonucu veren) bir çözüm
+//    uyguladım. Ana dosyaya küçük bir hook eklenirse (örn. ultiBtn'in
+//    actionFunc'ının pull'u da iletmesi) birebir Kirpi mekaniğine
+//    geçirilebilir.
+// 3) Nişan çizgileri: ana atış ve ulti için Kirpi tarzı kesikli çizgi +
+//    iniş noktası dairesi eklendi (draw() sarmalanarak).
+// 4) Çekiş mesafesine göre patlama/alan yarıçapı da büyüyüp küçülüyor.
 // ============================================================================
 
 (function () {
     'use strict';
 
-    // --- Karakter kimliği ve temel stat'lar (varsayım - istersen değiştir) ---
     const CHAR_ID = 'kuklaci';
     const CHAR_COLOR = '#8e44ad';
-    const CHAR_HP = 3200;      // [VARSAYIM] belirtilmedi, orta-tank aralığına koydum
-    const CHAR_SPEED = 3.6;    // [VARSAYIM] belirtilmedi, orta hız
+    const CHAR_HP = 3200;      // [VARSAYIM]
+    const CHAR_SPEED = 3.6;    // [VARSAYIM]
 
-    // --- Ana atış sabitleri (istek metninden) ---
-    const MAIN_IMPACT_DAMAGE = 700;   // mermi indiği yerde direkt alan hasarı
-    const MAIN_IMPACT_RADIUS = 90;
-    const FIELD_DPS = 100;            // alan, saniyede 100 hasar verir
-    const FIELD_DURATION_FRAMES = 120; // 2 saniye (60fps varsayımıyla)
-    const FIELD_RADIUS = 90;
+    const MAIN_IMPACT_DAMAGE = 700;
+    const MAIN_IMPACT_RADIUS_MIN = 60;   // [VARSAYIM] yakın atışta küçük alan
+    const MAIN_IMPACT_RADIUS_MAX = 120;  // [VARSAYIM] uzak atışta büyük alan
+    const FIELD_DPS = 100;
+    const FIELD_DURATION_FRAMES = 120; // 2 saniye
+    const FIELD_RADIUS_MIN = 60;
+    const FIELD_RADIUS_MAX = 120;
 
-    // --- Ulti sabitleri ---
-    const ULTI_EXPLOSION_DAMAGE = 500;  // [VARSAYIM] "patlar ve yok eder" için somut hasar, belirtilmemişti
-    const ULTI_EXPLOSION_RADIUS = 130;  // [VARSAYIM]
+    const ULTI_EXPLOSION_DAMAGE = 500;  // [VARSAYIM]
+    const ULTI_EXPLOSION_RADIUS_MIN = 90;   // [VARSAYIM]
+    const ULTI_EXPLOSION_RADIUS_MAX = 170;  // [VARSAYIM]
     const PUPPET_HP = 400;
     const PUPPET_DAMAGE = 700;
-    const PUPPET_ATTACK_INTERVAL = 72;  // [VARSAYIM] 1.2 saniyede bir saldırır, belirtilmemişti
+    const PUPPET_ATTACK_INTERVAL = 72;  // [VARSAYIM]
     const PUPPET_SPEED = 2.5;           // [VARSAYIM]
     const PUPPET_RADIUS = 18;
-    const PUPPET_SOAK_DAMAGE = 150;     // [VARSAYIM] bot mermisi kuklaya çarpınca kuklanın aldığı hasar
+    const PUPPET_SOAK_DAMAGE = 150;     // [VARSAYIM]
 
-    // --- Karakteri stat sistemine kaydet ---
     window.GAME_EXT.characters[CHAR_ID] = { color: CHAR_COLOR, hp: CHAR_HP, speed: CHAR_SPEED };
 
-    // --- Kendi bağımsız durum dizilerimiz (ana dosyanın bullets/botBullets dizilerinden ayrı) ---
-    let kBolts = [];   // ana atış / ulti mermileri (loblu uçuş simülasyonu)
-    let kZones = [];   // alan hasarı bırakan bölgeler
-    let kPuppets = []; // çağrılan kukla yardımcı botlar
+    let kBolts = [];
+    let kZones = [];
+    let kPuppets = [];
 
-    // --- Hook zincirleme yardımcı fonksiyonu: başka bir script aynı hook'u
-    // kullanıyorsa onu EZMEK yerine, önce onu çağırıp sonra kendimizinkini
-    // ekliyoruz. Bu, ileride kule savunması gibi başka bir mod/karakter
-    // script'i eklenince çakışma olmamasını sağlıyor. ---
     function chainHook(name, fn) {
         const prev = window.GAME_EXT.hooks[name];
         window.GAME_EXT.hooks[name] = function (...args) {
             let prevResult;
             if (typeof prev === 'function') prevResult = prev.apply(this, args);
             const ownResult = fn.apply(this, args);
-            // checkGameOver gibi boolean dönen hook'larda ikisinden biri true ise true dönsün
             if (typeof prevResult === 'boolean' || typeof ownResult === 'boolean') {
                 return !!prevResult || !!ownResult;
             }
@@ -72,41 +71,38 @@
         };
     }
 
-    // ------------------------------------------------------------------
-    // Player.prototype.fire SARMALAMA — ana atış
-    // ------------------------------------------------------------------
+    function lerp(a, b, t) { return a + (b - a) * t; }
+
     const originalFire = Player.prototype.fire;
     Player.prototype.fire = function (a, pullOverride) {
         if (this.charType !== CHAR_ID) return originalFire.call(this, a, pullOverride);
 
-        // Spike'ınki gibi çekiş (pull) tabanlı hedef mesafesi hesabı
         let pullMag = Math.min(1, Math.hypot(aimData.x, aimData.y));
         if (aimData.isMouse || pullMag < 0.1) pullMag = 1;
         const targetDist = Math.max(70, pullMag * RANGE * 0.78);
         const targetX = this.x + Math.cos(a) * targetDist;
         const targetY = this.y + Math.sin(a) * targetDist;
 
-        // Alan hâlâ aktifse (this.kFieldActive), bu atış "basit" olur:
-        // sadece direkt hasar verir, yeni alan BIRAKMAZ (yığılmayı önler).
         const isSimple = !!this.kFieldActive;
+        if (!isSimple) this.kFieldActive = true;
 
         kBolts.push({
             x: this.x, y: this.y, sx: this.x, sy: this.y,
             targetX, targetY, flightProgress: 0, isLanded: false,
-            isUlti: false, simple: isSimple
+            isUlti: false, simple: isSimple, pullMag
         });
         this.consumeAmmo();
     };
 
-    // ------------------------------------------------------------------
-    // Player.prototype.fireUlti SARMALAMA — kukla ordusu ultisi
-    // ------------------------------------------------------------------
     const originalFireUlti = Player.prototype.fireUlti;
-    Player.prototype.fireUlti = function (a, pull) {
-        if (this.charType !== CHAR_ID) return originalFireUlti.call(this, a, pull);
+    Player.prototype.fireUlti = function (a, pullOverride) {
+        if (this.charType !== CHAR_ID) return originalFireUlti.call(this, a, pullOverride);
         if (!this.ultReady || this.isDead) return;
 
-        let pullMag = pull !== undefined ? Math.max(0, Math.min(1, pull)) : 1;
+        let pullMag = (pullOverride !== undefined) ? pullOverride
+            : (ultAim && ultAim.pull !== undefined ? Math.max(0, Math.min(1, ultAim.pull)) : 1);
+        if (pullMag < 0.05) pullMag = 1;
+
         const targetDist = Math.max(70, RANGE * 0.9 * pullMag);
         const tx = clampPos(this.x + Math.cos(a) * targetDist, WALL_THICKNESS + 45, canvas.width - WALL_THICKNESS - 45);
         const ty = clampPos(this.y + Math.sin(a) * targetDist, WALL_THICKNESS + 45, canvas.height - WALL_THICKNESS - 45);
@@ -114,7 +110,7 @@
         kBolts.push({
             x: this.x, y: this.y, sx: this.x, sy: this.y,
             targetX: tx, targetY: ty, flightProgress: 0, isLanded: false,
-            isUlti: true, simple: false
+            isUlti: true, simple: false, pullMag
         });
         addFloatingNumber(this.x, this.y - 40, "KUKLA ÇAĞRISI!", "#8e44ad");
 
@@ -123,22 +119,12 @@
         if (ultiBtn) ultiBtn.classList.remove('ready');
     };
 
-    // ------------------------------------------------------------------
-    // setCharacter SARMALAMA — kendi state alanlarımızı ilklendirmek için
-    // ------------------------------------------------------------------
     const originalSetCharacter = Player.prototype.setCharacter;
     Player.prototype.setCharacter = function (type) {
         originalSetCharacter.call(this, type);
-        if (type === CHAR_ID) {
-            this.kFieldActive = false;
-        }
+        if (type === CHAR_ID) this.kFieldActive = false;
     };
 
-    // ------------------------------------------------------------------
-    // chargeUlti SARMALAMA — ana dosyadaki whitelist (['spike','ninja',
-    // 'hayalet','sam']) bizim charType'ımızı içermediği için ultimiz hiç
-    // dolmazdı; bu yüzden bu fonksiyonu sarmalıyoruz.
-    // ------------------------------------------------------------------
     const originalChargeUlti = window.chargeUlti;
     window.chargeUlti = function (amount) {
         if (player.charType !== CHAR_ID) return originalChargeUlti(amount);
@@ -152,10 +138,6 @@
         if (ultFill) ultFill.style.width = player.ultCharge + "%";
     };
 
-    // ------------------------------------------------------------------
-    // startGame SARMALAMA — ulti butonunu bu karakter için de göster.
-    // (Gadget butonları bilerek gizli kalıyor — "aksesuarlar daha sonra".)
-    // ------------------------------------------------------------------
     const originalStartGame = window.startGame;
     window.startGame = function () {
         originalStartGame();
@@ -165,12 +147,8 @@
         kBolts = []; kZones = []; kPuppets = [];
     };
 
-    // ------------------------------------------------------------------
-    // Karakter seçim ekranına yeni bir kart ekle (dinamik DOM enjeksiyonu,
-    // ana dosyadaki 4 sabit karta hiç dokunmadan)
-    // ------------------------------------------------------------------
     const charContainer = document.querySelector('.char-select-container');
-    if (charContainer) {
+    if (charContainer && !document.getElementById('char-' + CHAR_ID)) {
         const card = document.createElement('div');
         card.className = 'char-card';
         card.id = 'char-' + CHAR_ID;
@@ -186,19 +164,31 @@
         });
     }
 
-    // ------------------------------------------------------------------
-    // onReset ZİNCİRLEME — restart/yeni oyunda kendi dizilerimizi temizle
-    // ------------------------------------------------------------------
     chainHook('onReset', function () {
         kBolts = []; kZones = []; kPuppets = [];
         if (player) player.kFieldActive = false;
     });
 
-    // ------------------------------------------------------------------
-    // onDraw ZİNCİRLEME — mermi/alan/kukla görselleri
-    // ------------------------------------------------------------------
     chainHook('onDraw', function (ctx2) {
-        // Alanlar
+        if (player.charType === CHAR_ID && !player.isDead && aimData.active && player.ammo >= 1) {
+            let pullMag = Math.min(1, Math.hypot(aimData.x, aimData.y));
+            if (aimData.isMouse || pullMag < 0.1) pullMag = 1;
+            const targetDist = Math.max(70, pullMag * RANGE * 0.78);
+            const tx = player.x + Math.cos(aimData.angle) * targetDist;
+            const ty = player.y + Math.sin(aimData.angle) * targetDist;
+            const rad = lerp(MAIN_IMPACT_RADIUS_MIN, MAIN_IMPACT_RADIUS_MAX, pullMag);
+            drawTargetPreview(ctx2, player.x, player.y, tx, ty, rad, '#8e44ad', 'rgba(142,68,173,0.28)');
+        }
+        if (player.charType === CHAR_ID && !player.isDead && ultAim.active && player.ultReady) {
+            let pullMag = Math.max(0, Math.min(1, ultAim.pull !== undefined ? ultAim.pull : 1));
+            if (pullMag < 0.05) pullMag = 1;
+            const targetDist = Math.max(70, RANGE * 0.9 * pullMag);
+            const tx = player.x + Math.cos(ultAim.angle) * targetDist;
+            const ty = player.y + Math.sin(ultAim.angle) * targetDist;
+            const rad = lerp(ULTI_EXPLOSION_RADIUS_MIN, ULTI_EXPLOSION_RADIUS_MAX, pullMag);
+            drawTargetPreview(ctx2, player.x, player.y, tx, ty, rad, '#6c3483', 'rgba(108,52,131,0.28)');
+        }
+
         kZones.forEach(z => {
             ctx2.save();
             ctx2.translate(z.x, z.y);
@@ -208,7 +198,6 @@
             ctx2.strokeStyle = '#c39bd3'; ctx2.lineWidth = 2; ctx2.setLineDash([8, 10]); ctx2.stroke();
             ctx2.restore();
         });
-        // Mermiler (loblu - yükseldikçe büyüyüp gölge bırakan basit görsel)
         kBolts.forEach(b => {
             if (b.isLanded) return;
             const h = Math.sin((b.flightProgress || 0) * Math.PI);
@@ -224,7 +213,6 @@
             ctx2.strokeStyle = '#c39bd3'; ctx2.lineWidth = 2; ctx2.stroke();
             ctx2.restore();
         });
-        // Kuklalar
         kPuppets.forEach(p => {
             ctx2.save();
             ctx2.translate(p.x, p.y);
@@ -237,12 +225,16 @@
         });
     });
 
-    // ------------------------------------------------------------------
-    // Bağımsız güncelleme döngüsü — ana oyunun requestAnimationFrame
-    // döngüsünden TAMAMEN ayrı çalışır (GAME_MODE'a bağlı olmadığı için
-    // her zaman, hangi mod aktif olursa olsun tıklar). gameStarted false
-    // iken hiçbir şey yapmaz.
-    // ------------------------------------------------------------------
+    function drawTargetPreview(ctx2, sx, sy, tx, ty, radius, strokeColor, fillColor) {
+        ctx2.save();
+        ctx2.beginPath(); ctx2.moveTo(sx, sy); ctx2.lineTo(tx, ty);
+        ctx2.strokeStyle = 'rgba(255,255,255,0.3)'; ctx2.lineWidth = 2; ctx2.setLineDash([5, 5]); ctx2.stroke();
+        ctx2.beginPath(); ctx2.arc(tx, ty, radius, 0, Math.PI * 2);
+        ctx2.fillStyle = fillColor; ctx2.fill();
+        ctx2.strokeStyle = strokeColor; ctx2.lineWidth = 2; ctx2.setLineDash([]); ctx2.stroke();
+        ctx2.restore();
+    }
+
     let kLastTime = 0;
     function kLoop(t) {
         if (!kLastTime) kLastTime = t;
@@ -254,7 +246,6 @@
     requestAnimationFrame(kLoop);
 
     function kUpdate(ts) {
-        // --- Mermileri güncelle (loblu uçuş + iniş) ---
         for (let i = kBolts.length - 1; i >= 0; i--) {
             const b = kBolts[i];
             const d = getDist(b, { x: b.targetX, y: b.targetY });
@@ -271,7 +262,6 @@
             }
         }
 
-        // --- Alanları güncelle ---
         for (let i = kZones.length - 1; i >= 0; i--) {
             const z = kZones[i];
             z.life -= ts;
@@ -286,9 +276,9 @@
             });
             if (z.life <= 0) kZones.splice(i, 1);
         }
-        if (kZones.length === 0 && player) player.kFieldActive = false;
+        const pendingFieldBolt = kBolts.some(b => !b.isUlti && !b.simple);
+        if (kZones.length === 0 && !pendingFieldBolt && player) player.kFieldActive = false;
 
-        // --- Kuklaları güncelle ---
         for (let i = kPuppets.length - 1; i >= 0; i--) {
             const p = kPuppets[i];
             if (p.hp <= 0) {
@@ -296,7 +286,6 @@
                 kPuppets.splice(i, 1);
                 continue;
             }
-            // En yakın düşmanı bul
             const enemies = getActiveEnemies();
             let nearest = null, nearestDist = Infinity;
             enemies.forEach(e => {
@@ -316,7 +305,6 @@
                     p.attackCooldown = PUPPET_ATTACK_INTERVAL;
                 }
             }
-            // Bot mermilerini "soak" et (oyuncuya gitmesi gereken mermiyi kukla üstlenir)
             for (let j = botBullets.length - 1; j >= 0; j--) {
                 const bb = botBullets[j];
                 if (getDist(bb, p) < p.radius + 10) {
@@ -333,15 +321,14 @@
         spawnParticles(b.x, b.y, b.isUlti ? '#6c3483' : '#8e44ad', b.isUlti ? 'smoke' : 'normal');
 
         if (b.isUlti) {
-            // Patlama hasarı ("patlar ve yok eder" görsel/etki karşılığı - [VARSAYIM] miktar)
             screenShake = 12;
+            const explosionRadius = lerp(ULTI_EXPLOSION_RADIUS_MIN, ULTI_EXPLOSION_RADIUS_MAX, b.pullMag !== undefined ? b.pullMag : 1);
             getActiveEnemies().forEach(e => {
-                if (getDist(b, e) < ULTI_EXPLOSION_RADIUS + e.radius) {
+                if (getDist(b, e) < explosionRadius + e.radius) {
                     e.hp -= ULTI_EXPLOSION_DAMAGE;
                     addFloatingNumber(e.x, e.y, ULTI_EXPLOSION_DAMAGE, "#6c3483");
                 }
             });
-            // Her aktif düşmanın olduğu yerden bir kukla çağır
             const enemiesAtCast = getActiveEnemies();
             enemiesAtCast.forEach(e => {
                 kPuppets.push({
@@ -353,22 +340,18 @@
             return;
         }
 
-        // Ana atış: direkt alan hasarı
-        let hitAny = false;
+        const impactRadius = lerp(MAIN_IMPACT_RADIUS_MIN, MAIN_IMPACT_RADIUS_MAX, b.pullMag !== undefined ? b.pullMag : 1);
         getActiveEnemies().forEach(e => {
-            if (getDist(b, e) < MAIN_IMPACT_RADIUS + e.radius) {
+            if (getDist(b, e) < impactRadius + e.radius) {
                 e.hp -= MAIN_IMPACT_DAMAGE;
                 addFloatingNumber(e.x, e.y, MAIN_IMPACT_DAMAGE, "#8e44ad");
-                hitAny = true;
             }
         });
 
-        // "Basit" atış (alan zaten aktifken atılan ikinci mermi) burada biter, yeni alan bırakmaz
         if (b.simple) return;
 
-        // Yeni alan bırak, alan bitmeden atılan sonraki atışlar "basit" olacak
-        kZones.push({ x: b.x, y: b.y, radius: FIELD_RADIUS, life: FIELD_DURATION_FRAMES, tickTimer: 0 });
-        if (player) player.kFieldActive = true;
+        const fieldRadius = lerp(FIELD_RADIUS_MIN, FIELD_RADIUS_MAX, b.pullMag !== undefined ? b.pullMag : 1);
+        kZones.push({ x: b.x, y: b.y, radius: fieldRadius, life: FIELD_DURATION_FRAMES, tickTimer: 0 });
     }
 
 })();
