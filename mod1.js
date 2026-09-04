@@ -1,14 +1,14 @@
 // ============================================================================
-// KARAKTER: BUMERANGCI (mod2.js) — v2 (düzeltmeler)
+// KARAKTER: BUMERANGCI (mod2.js) — v3 (düzeltmeler)
 // ----------------------------------------------------------------------------
 // BU SÜRÜMDE DÜZELTİLENLER:
-// 1) Ulti tuşu artık görünüyor: startGame yerine Player.prototype.setCharacter
-//    sarmalanıyor (ana dosya karakteri gerçekten bu fonksiyonla ayarlıyor).
-// 2) Bumerang artık en fazla 3 düşmana vurunca otomatik geri dönüyor
-//    (sınırsız tarama kalktı).
-// 3) Hasar 800 -> 650 düşürüldü.
-// 4) Bumerang artık engellere (obstacles) ve diken duvarlarına (cactusWalls)
-//    çarpıyor, çarpınca geri dönüyor (önceden sadece dış duvarları görüyordu).
+// 1) Ulti tuşu artık KESİN görünüyor: ana dosyanın startGame fonksiyonu
+//    ultiBtn'i "bumerangci" listede olmadığı için senkron şekilde tekrar
+//    gizliyordu. Artık her karede (bUpdate içinde) zorla açık tutuluyor,
+//    ana kodun gizlemesine rağmen bir sonraki karede geri düzeltiliyor.
+// 2) Gidiş hasarı: 650 -> 300
+// 3) Dönüş hasarı: yeni eklendi, 700 (önceden dönüşte hiç hasar yoktu)
+// 4) Bumerang artık çarptığı engele (obstacles/cactusWalls) hasar veriyor
 // ============================================================================
 
 (function () {
@@ -19,11 +19,13 @@
     const CHAR_HP = 3000;                   // [VARSAYIM]
     const CHAR_SPEED = 3.4;                 // [VARSAYIM]
 
-    const NORMAL_DAMAGE = 650;              // güncellendi: 800 -> 650
+    const OUTBOUND_DAMAGE = 300;            // güncellendi: gidiş hasarı
+    const RETURN_DAMAGE = 700;              // yeni: dönüş hasarı
+    const OBSTACLE_DAMAGE = 200;            // [VARSAYIM] engele verilen hasar
     const NORMAL_RANGE = RANGE;
     const NORMAL_SPEED = PLAYER_BULLET_SPEED;
     const RETURN_HEAL = 200;
-    const MAX_HITS_BEFORE_RETURN = 3;       // yeni: 3 düşmana vurunca geri döner
+    const MAX_HITS_BEFORE_RETURN = 3;       // gidişte 3 düşmana vurunca döner
 
     const ULTI_COUNT = 5;
     const ULTI_SPREAD = Math.PI / 3;        // [VARSAYIM]
@@ -91,14 +93,10 @@
         if (ultFill) ultFill.style.width = player.ultCharge + "%";
     };
 
-    // DÜZELTME 1: ulti butonu artık burada, gerçek karakter ayarlama anında açılıyor
     const originalSetCharacter = Player.prototype.setCharacter;
     Player.prototype.setCharacter = function (type) {
         originalSetCharacter.call(this, type);
-        if (type === CHAR_ID) {
-            if (ultiBtn) ultiBtn.style.display = 'flex';
-            bBolts = []; ultiQueue = [];
-        }
+        if (type === CHAR_ID) { bBolts = []; ultiQueue = []; }
     };
 
     const charContainer = document.querySelector('.char-select-container');
@@ -109,7 +107,7 @@
         card.innerHTML =
             '<div class="char-color-preview" style="background:' + CHAR_COLOR + ';"></div>' +
             '<span>Bumerangcı</span>' +
-            '<small>Hasar: 650<br>Güç: 5\'li Bumerang</small>';
+            '<small>Hasar: 300 / 700<br>Güç: 5\'li Bumerang</small>';
         charContainer.appendChild(card);
         card.addEventListener('click', () => {
             selectedCharacter = CHAR_ID;
@@ -150,6 +148,11 @@
     requestAnimationFrame(bLoop);
 
     function bUpdate(ts) {
+        // DÜZELTME 1: ana kodun her karede gizlemesine karşı, burada zorla açık tutuluyor
+        if (player.charType === CHAR_ID && ultiBtn && ultiBtn.style.display !== 'flex') {
+            ultiBtn.style.display = 'flex';
+        }
+
         for (let i = ultiQueue.length - 1; i >= 0; i--) {
             const q = ultiQueue[i];
             q.framesLeft -= ts;
@@ -169,42 +172,57 @@
                 const hitWall = b.x < WALL_THICKNESS + 5 || b.x > canvas.width - WALL_THICKNESS - 5 ||
                                  b.y < WALL_THICKNESS + 5 || b.y > canvas.height - WALL_THICKNESS - 5;
 
-                // DÜZELTME 4: engellere (mor bariyer) ve diken duvarlarına da çarpışma kontrolü
+                // DÜZELTME 4: çarptığı engele hasar veriyor
                 let hitObstacle = false;
                 for (const o of obstacles.concat(cactusWalls || [])) {
-                    if (getDist(b, o) < o.radius + 5) { hitObstacle = true; break; }
+                    if (getDist(b, o) < o.radius + 5) {
+                        o.hp -= OBSTACLE_DAMAGE;
+                        hitObstacle = true;
+                        break;
+                    }
                 }
 
                 if (outOfRange || hitWall || hitObstacle) {
                     b.returning = true;
                     b.hitTargets = [];
                 }
+
+                if (!b.returning) {
+                    getActiveEnemies().forEach(e => {
+                        if (b.hitTargets.includes(e)) return;
+                        if (getDist(b, e) < e.radius + 12) {
+                            e.hp -= OUTBOUND_DAMAGE;
+                            addFloatingNumber(e.x, e.y, OUTBOUND_DAMAGE, CHAR_COLOR);
+                            b.hitTargets.push(e);
+                            if (b.hitTargets.length >= MAX_HITS_BEFORE_RETURN) {
+                                b.returning = true;
+                                b.hitTargets = [];
+                            }
+                        }
+                    });
+                }
             } else {
                 const ang = getAngle(b, player);
                 b.vx = Math.cos(ang) * NORMAL_SPEED;
                 b.vy = Math.sin(ang) * NORMAL_SPEED;
                 b.x += b.vx * ts; b.y += b.vy * ts;
+
+                // DÜZELTME 3: dönüş sırasında da hasar veriyor
+                getActiveEnemies().forEach(e => {
+                    if (b.hitTargets.includes(e)) return;
+                    if (getDist(b, e) < e.radius + 12) {
+                        e.hp -= RETURN_DAMAGE;
+                        addFloatingNumber(e.x, e.y, RETURN_DAMAGE, "#e67e22");
+                        b.hitTargets.push(e);
+                    }
+                });
+
                 if (getDist(b, player) < player.radius + 15) {
                     player.hp = Math.min(player.maxHp, player.hp + RETURN_HEAL);
                     addFloatingNumber(player.x, player.y, "+" + RETURN_HEAL, "#2ecc71");
                     bBolts.splice(i, 1);
                     continue;
                 }
-            }
-
-            // DÜZELTME 2: en fazla 3 düşmana vurunca otomatik geri dön
-            if (!b.returning) {
-                getActiveEnemies().forEach(e => {
-                    if (b.hitTargets.includes(e)) return;
-                    if (getDist(b, e) < e.radius + 12) {
-                        e.hp -= NORMAL_DAMAGE;
-                        addFloatingNumber(e.x, e.y, NORMAL_DAMAGE, CHAR_COLOR);
-                        b.hitTargets.push(e);
-                        if (b.hitTargets.length >= MAX_HITS_BEFORE_RETURN) {
-                            b.returning = true;
-                        }
-                    }
-                });
             }
         }
     }
