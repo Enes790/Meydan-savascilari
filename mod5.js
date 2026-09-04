@@ -1,10 +1,11 @@
-// ========== mod5.js (ÇARPIŞÇI) - DONMA DÜZELTME + OPTİMİZASYON ==========
+// ========== mod5.js (ÇARPIŞÇI) - PERFORMANS SÜRÜMÜ ==========
 // Karakter: Çarpışçı
 // Saldırı: Önce yerinde alan hasarı (patlama), sonra dash.
 // Dash sırasında temas hasarı 400, can kazancı 50/düşman.
 // Ulti: 6 saniyelik yavaşlatma alanı oluşturur.
 // Ulti alanı aktifken her saldırıda alan içindeki botlar oyuncuya çekilir ve 100 hasar alır.
 // Efektlerde parçacık yok, sadece patlama animasyonu (genişleyen daire).
+// Nişan göstergesi KALDIRILDI, ulti alanı göstergesi KALDIRILDI.
 
 (function () {
     'use strict';
@@ -80,19 +81,21 @@
         if (this.charType !== CHAR_ID) return originalFire.call(this, a, pullOverride);
         if (this.ammo < 1 || this.isDead || this.carpisciDashAktif) return;
 
+        const aktifDusmanlar = getActiveEnemies(); // tek seferde al
+
         // 1) Başlangıç patlaması
-        getActiveEnemies().forEach(e => {
+        for (const e of aktifDusmanlar) {
             if (getDist(this, e) <= BASLANGIC_ALAN_YARICAP + e.radius) {
                 e.hp -= BASLANGIC_ALAN_HASAR;
                 addFloatingNumber(e.x, e.y, BASLANGIC_ALAN_HASAR, CHAR_COLOR);
             }
-        });
+        }
         explosions.push({x: this.x, y: this.y, radius: 10, maxRadius: BASLANGIC_ALAN_YARICAP, life: 15, maxLife: 15});
         screenShake = 4;
 
         // 2) Ulti alanı aktifse çekim ve hasar
         if (this.carpisciUltiAktif) {
-            getActiveEnemies().forEach(e => {
+            for (const e of aktifDusmanlar) {
                 const mesafe = getDist(this, e);
                 if (mesafe <= ULTI_ALAN_YARICAP + e.radius) {
                     e.hp -= ULTI_CEKIM_HASAR;
@@ -101,7 +104,7 @@
                     e.kbX = Math.cos(ang) * ULTI_CEKIM_GUCU;
                     e.kbY = Math.sin(ang) * ULTI_CEKIM_GUCU;
                 }
-            });
+            }
         }
 
         // 3) Dash başlat
@@ -142,49 +145,47 @@
         if (ultFill) ultFill.style.width = player.ultCharge + "%";
     };
 
-    // ---- window.update override ----
+    // ---- window.update override (optimize edilmiş) ----
     const originalUpdate = window.update;
     window.update = function (ts) {
         originalUpdate(ts);
         if (!gameStarted) return;
 
         if (player.charType === CHAR_ID) {
-            // Ulti butonunu zorla görünür tut
             if (ultiBtn && ultiBtn.style.display !== 'flex') ultiBtn.style.display = 'flex';
 
-            // Ulti alanı yavaşlatma (daha verimli: her kare değil, sadece durum değişikliğinde)
+            // Ulti alanı yavaşlatma (sadece durum değişikliğinde)
             if (player.carpisciUltiAktif) {
                 player.carpisciUltiSure -= ts;
                 if (player.carpisciUltiSure <= 0) {
                     player.carpisciUltiAktif = false;
                     player.carpisciUltiSure = 0;
-                    // Tüm botların hızını geri yükle
-                    getActiveEnemies().forEach(e => {
+                    const aktifDusmanlar = getActiveEnemies();
+                    for (const e of aktifDusmanlar) {
                         if (e._carpisciYavaslatildi) {
                             e.speed = e._carpisciOrijinalHiz;
                             delete e._carpisciYavaslatildi;
                             delete e._carpisciOrijinalHiz;
                         }
-                    });
+                    }
                 } else {
-                    getActiveEnemies().forEach(e => {
+                    const aktifDusmanlar = getActiveEnemies(); // bir kez al
+                    for (const e of aktifDusmanlar) {
                         const mesafe = getDist(player, e);
                         if (mesafe <= ULTI_ALAN_YARICAP + e.radius) {
-                            // Yavaşlat uygula (sadece ilk kez)
                             if (!e._carpisciYavaslatildi) {
                                 e._carpisciOrijinalHiz = e.speed;
                                 e.speed = e._carpisciOrijinalHiz * ULTI_YAVASLATMA_ORANI;
                                 e._carpisciYavaslatildi = true;
                             }
                         } else {
-                            // Alan dışına çıktıysa hızını geri ver
                             if (e._carpisciYavaslatildi) {
                                 e.speed = e._carpisciOrijinalHiz;
                                 delete e._carpisciYavaslatildi;
                                 delete e._carpisciOrijinalHiz;
                             }
                         }
-                    });
+                    }
                 }
             }
 
@@ -200,8 +201,9 @@
                 p.x = clampPos(p.x, p.radius + WALL_THICKNESS, canvas.width - p.radius - WALL_THICKNESS);
                 p.y = clampPos(p.y, p.radius + WALL_THICKNESS, canvas.height - p.radius - WALL_THICKNESS);
 
-                getActiveEnemies().forEach(e => {
-                    if (e.isDead) return;
+                const aktifDusmanlar = getActiveEnemies(); // bir kez al
+                for (const e of aktifDusmanlar) {
+                    if (e.isDead) continue;
                     if (!p.carpisciTemasEdilenler.includes(e) && getDist(p, e) < p.radius + e.radius) {
                         p.carpisciTemasEdilenler.push(e);
                         e.hp -= DASH_TEMAS_HASAR;
@@ -209,7 +211,7 @@
                         p.hp = Math.min(p.maxHp, p.hp + DASH_TEMAS_CAN);
                         addFloatingNumber(p.x, p.y - 20, "+" + DASH_TEMAS_CAN, "#2ecc71");
                     }
-                });
+                }
 
                 if (p.carpisciDashKalan <= 0) {
                     p.carpisciDashAktif = false;
@@ -218,52 +220,10 @@
         }
     };
 
-    // ---- Nişan çizgisi (daha güvenli: orijinal draw'u hiç değiştirmeden sadece ek çizim) ----
+    // ---- Draw override: HİÇBİR ŞEY ÇİZMİYORUZ (nişan göstergesi yok) ----
     const originalDraw = window.draw;
     window.draw = function () {
-        // Önce orijinal çizimi yap (nişan dahil)
         originalDraw();
-
-        if (!gameStarted || player.charType !== CHAR_ID) return;
-
-        // Kendi nişan göstergemizi orijinalin üstüne çiz (çakışma olmaz, şeffaf alanlar)
-        if (aimData.active && player.ammo >= 1 && !player.isDead) {
-            ctx.save();
-            ctx.translate(player.x, player.y);
-            ctx.rotate(aimData.angle);
-            // Dash mesafesi çizgisi
-            ctx.fillStyle = 'rgba(255, 107, 53, 0.15)';
-            ctx.fillRect(0, -5, DASH_MESAFE, 10);
-            ctx.strokeStyle = 'rgba(255, 107, 53, 0.8)';
-            ctx.lineWidth = 2;
-            ctx.setLineDash([8, 6]);
-            ctx.strokeRect(0, -5, DASH_MESAFE, 10);
-            ctx.setLineDash([]);
-            // Başlangıç alan göstergesi
-            ctx.beginPath();
-            ctx.arc(0, 0, BASLANGIC_ALAN_YARICAP, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(255, 107, 53, 0.2)';
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(255, 107, 53, 0.7)';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            ctx.restore();
-        }
-
-        // Ulti alanı göstergesi
-        if (player.carpisciUltiAktif) {
-            ctx.save();
-            ctx.translate(player.x, player.y);
-            ctx.beginPath();
-            ctx.arc(0, 0, ULTI_ALAN_YARICAP, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(255, 107, 53, 0.1)';
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(255, 107, 53, 0.5)';
-            ctx.lineWidth = 2;
-            ctx.setLineDash([10, 5]);
-            ctx.stroke();
-            ctx.setLineDash([]);
-            ctx.restore();
-        }
     };
+
 })();
