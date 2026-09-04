@@ -1,6 +1,7 @@
-// ========== mod4.js (TAŞÇI) ==========
+// ========== mod4.js (TAŞÇI) - SON DÜZELTMELER ==========
 // Karakter: Taşçı
 // Ana saldırı: Ağır taş atar (1500 hasar, 2 kez seker).
+// Menzil: 140 (kısaltıldı)
 // Menzil sonunda 9 parçaya ayrılır (her biri 200 hasar).
 // Parçalar: biri taşın gittiği yönde, diğerleri maksimum ±60° sapma ile.
 // Taş bota çarparsa parçalanmaz, direkt hasar verir ve yok olur.
@@ -13,20 +14,20 @@
     const CHAR_HP = 3400;
     const CHAR_SPEED = 3.6;
 
-    const TAS_MENZIL = 380;                  // Hortlak'tan biraz kısa
+    const TAS_MENZIL = 140;                  // daha da kısaltıldı
     const TAS_HASAR = 1500;
-    const TAS_HIZ = PLAYER_BULLET_SPEED * 0.8; // ağır taş, yavaş
-    const TAS_SEKME_HAKKI = 2;               // 2 kez sekebilir
+    const TAS_HIZ = PLAYER_BULLET_SPEED * 0.8;
+    const TAS_SEKME_HAKKI = 2;
     const PARCA_HASAR = 200;
     const PARCA_SAYISI = 9;
-    const PARCA_HIZ = PLAYER_BULLET_SPEED * 0.7; // parçalar yavaş
-    const PARCA_MENZIL = 180;
+    const PARCA_HIZ = PLAYER_BULLET_SPEED * 0.7;
+    const PARCA_MENZIL = 100;                // parça menzili de kısaltıldı
     const PARCA_MAX_ACI = Math.PI / 3;       // 60 derece
 
     window.GAME_EXT.characters[CHAR_ID] = { color: CHAR_COLOR, hp: CHAR_HP, speed: CHAR_SPEED };
 
-    let tasciKayalar = [];    // ana taşlar
-    let tasciParcalar = [];   // parçalar
+    let tasciKayalar = [];
+    let tasciParcalar = [];
 
     // ---- Karakter kartı ----
     const container = document.querySelector('.char-select-container');
@@ -60,7 +61,7 @@
         };
     }
 
-    // ---- setCharacter override: ulti butonunu gizle ve dizileri temizle ----
+    // ---- setCharacter override ----
     const originalSetCharacter = Player.prototype.setCharacter;
     Player.prototype.setCharacter = function (type) {
         originalSetCharacter.call(this, type);
@@ -73,7 +74,7 @@
         }
     };
 
-    // ---- Fire override: taş at ----
+    // ---- Fire override ----
     const originalFire = Player.prototype.fire;
     Player.prototype.fire = function (a, pullOverride) {
         if (this.charType !== CHAR_ID) return originalFire.call(this, a, pullOverride);
@@ -86,13 +87,13 @@
             vy: Math.sin(a) * TAS_HIZ,
             sekmeHakki: TAS_SEKME_HAKKI,
             hasar: TAS_HASAR,
-            isDead: false
+            isDead: false,
+            rotasyon: Math.random() * Math.PI * 2,
+            boyut: 12
         });
         this.consumeAmmo();
         this.lastShotTime = Date.now();
     };
-
-    // ---- chargeUlti override gereksiz, ulti yok ----
 
     // ---- Reset hook ----
     chainHook('onReset', function () {
@@ -105,18 +106,41 @@
         tasciKayalar.forEach(b => {
             ctx2.save();
             ctx2.translate(b.x, b.y);
-            ctx2.rotate(Math.atan2(b.vy, b.vx));
+            ctx2.rotate(b.rotasyon + Date.now() / 200); // havada dönme
+            // Gölge
+            ctx2.shadowColor = 'rgba(0,0,0,0.5)';
+            ctx2.shadowBlur = 6;
+            ctx2.shadowOffsetX = 3;
+            ctx2.shadowOffsetY = 3;
+            // Düzensiz taş şekli (çokgen)
             ctx2.beginPath();
-            ctx2.arc(0, 0, 11, 0, Math.PI * 2);
-            ctx2.fillStyle = CHAR_COLOR;
+            ctx2.moveTo(12, 0);
+            ctx2.lineTo(6, -9);
+            ctx2.lineTo(-10, -6);
+            ctx2.lineTo(-9, 5);
+            ctx2.lineTo(2, 11);
+            ctx2.closePath();
+            ctx2.fillStyle = '#8b5e3c';
             ctx2.fill();
+            ctx2.shadowColor = 'transparent';
+            ctx2.shadowBlur = 0;
+            ctx2.shadowOffsetX = 0;
+            ctx2.shadowOffsetY = 0;
             ctx2.strokeStyle = '#3e2710';
             ctx2.lineWidth = 2;
             ctx2.stroke();
-            // Kaya dokusu
+            // Çatlaklar
             ctx2.beginPath();
-            ctx2.arc(-2, -2, 3, 0, Math.PI * 2);
-            ctx2.fillStyle = '#6b4a2b';
+            ctx2.moveTo(-2, -4);
+            ctx2.lineTo(5, 1);
+            ctx2.lineTo(-3, 5);
+            ctx2.strokeStyle = '#5d3a1a';
+            ctx2.lineWidth = 1.5;
+            ctx2.stroke();
+            // Küçük çukurlar
+            ctx2.beginPath();
+            ctx2.arc(2, -3, 2, 0, Math.PI*2);
+            ctx2.fillStyle = '#5d3a1a';
             ctx2.fill();
             ctx2.restore();
         });
@@ -124,11 +148,18 @@
         tasciParcalar.forEach(p => {
             ctx2.save();
             ctx2.translate(p.x, p.y);
-            ctx2.rotate(Math.atan2(p.vy, p.vx));
+            ctx2.rotate(p.rotasyon + Date.now() / 150);
             ctx2.beginPath();
-            ctx2.arc(0, 0, 4, 0, Math.PI * 2);
+            ctx2.moveTo(5, 0);
+            ctx2.lineTo(1, -4);
+            ctx2.lineTo(-4, 0);
+            ctx2.lineTo(1, 4);
+            ctx2.closePath();
             ctx2.fillStyle = '#8b5e3c';
             ctx2.fill();
+            ctx2.strokeStyle = '#3e2710';
+            ctx2.lineWidth = 1;
+            ctx2.stroke();
             ctx2.restore();
         });
     });
@@ -147,15 +178,13 @@
     // ---- Parça oluşturma ----
     function tasciParcala(tas) {
         const anaAci = Math.atan2(tas.vy, tas.vx);
-        // 9 parça: biri düz, diğerleri -60 ile +60 arasında eşit dağılım
         const acilar = [];
-        acilar.push(0); // düz
-        const adim = (PARCA_MAX_ACI * 2) / (PARCA_SAYISI - 1); // 120° / 8 = 15°
+        acilar.push(0);
+        const adim = (PARCA_MAX_ACI * 2) / (PARCA_SAYISI - 1);
         for (let i = 1; i < PARCA_SAYISI; i++) {
             const sapma = -PARCA_MAX_ACI + (i - 1) * adim;
             acilar.push(sapma);
         }
-        // Karıştır veya sıralı bırak, fark etmez
         acilar.forEach(sapma => {
             const aci = anaAci + sapma;
             tasciParcalar.push({
@@ -164,9 +193,15 @@
                 vx: Math.cos(aci) * PARCA_HIZ,
                 vy: Math.sin(aci) * PARCA_HIZ,
                 hasar: PARCA_HASAR,
-                isDead: false
+                isDead: false,
+                rotasyon: Math.random() * Math.PI * 2
             });
         });
+        // Parçalanma efekti: yoğun parçacık
+        for (let k = 0; k < 25; k++) {
+            spawnParticles(tas.x, tas.y, '#8b5e3c', 'normal');
+        }
+        screenShake = 5;
         addFloatingNumber(tas.x, tas.y, "PARÇALANDI!", "#8b5e3c");
     }
 
@@ -180,42 +215,34 @@
             t.x += t.vx * ts;
             t.y += t.vy * ts;
 
-            // Duvarlara çarpma
             const hwX = t.x < WALL_THICKNESS + 8 || t.x > canvas.width - WALL_THICKNESS - 8;
             const hwY = t.y < WALL_THICKNESS + 8 || t.y > canvas.height - WALL_THICKNESS - 8;
 
-            // Engeller
             let hitObs = false;
             for (const o of obstacles.concat(cactusWalls || [])) {
                 if (getDist(t, o) < o.radius + 11) { hitObs = true; break; }
             }
 
-            // Duvara çarptıysa ve sekme hakkı varsa
             if ((hwX || hwY || hitObs) && t.sekmeHakki > 0) {
                 if (hwX) { t.vx *= -1; t.x = t.x < canvas.width / 2 ? WALL_THICKNESS + 9 : canvas.width - WALL_THICKNESS - 9; }
                 if (hwY) { t.vy *= -1; t.y = t.y < canvas.height / 2 ? WALL_THICKNESS + 9 : canvas.height - WALL_THICKNESS - 9; }
                 if (hitObs) { t.vx *= -1; t.vy *= -1; t.x += t.vx; t.y += t.vy; }
                 t.sekmeHakki--;
-                // Menzili yeniden başlat (böylece sekme sonrası daha uzağa gidebilir)
                 t.sx = t.x; t.sy = t.y;
+                spawnParticles(t.x, t.y, '#8b5e3c', 'normal');
             }
             else if ((hwX || hwY || hitObs)) {
-                // Sekme hakkı bitti, parçalanmadan yok olabilir veya parçalansın
-                // İsteğe göre parçalanabilir, ama biz yok edelim
                 t.isDead = true;
                 continue;
             }
 
-            // Menzil kontrolü
             const mesafe = getDist(t, { x: t.sx, y: t.sy });
             if (mesafe >= TAS_MENZIL) {
-                // Menzil sonunda parçalan
                 tasciParcala(t);
                 t.isDead = true;
                 continue;
             }
 
-            // Bota çarpma (parçalanmaz, hasar verir)
             let hedefVuruldu = false;
             getActiveEnemies().forEach(e => {
                 if (!hedefVuruldu && getDist(t, e) < e.radius + 11) {
@@ -261,21 +288,33 @@
         }
     }
 
-    // ---- Nişan çizgisi (opsiyonel) ----
+    // ---- Nişan çizgisi: orijinalin çizmesini tamamen engelle ----
     const originalDraw = window.draw;
     window.draw = function() {
-        originalDraw();
-        if (!gameStarted || player.charType !== CHAR_ID) return;
-        if (aimData.active && player.ammo >= 1 && !player.isDead) {
+        if (player.charType === CHAR_ID && aimData.active && player.ammo >= 1 && !player.isDead) {
+            // Orijinal nişan çizgisi çizilmesin diye player.ammo'yu geçici 0 yap
+            const geciciAmmo = player.ammo;
+            player.ammo = 0;
+            originalDraw();
+            player.ammo = geciciAmmo;
+
+            // Kendi kısa nişan çizgimizi çiz
             ctx.save();
             ctx.translate(player.x, player.y);
             ctx.rotate(aimData.angle);
-            ctx.fillStyle = 'rgba(139, 94, 60, 0.2)';
+            ctx.fillStyle = 'rgba(139, 94, 60, 0.25)';
             ctx.fillRect(0, -6, TAS_MENZIL, 12);
-            ctx.strokeStyle = 'rgba(139, 94, 60, 0.6)';
+            ctx.strokeStyle = 'rgba(139, 94, 60, 0.8)';
             ctx.lineWidth = 2;
             ctx.strokeRect(0, -6, TAS_MENZIL, 12);
+            // Menzil sonu işareti
+            ctx.beginPath();
+            ctx.arc(TAS_MENZIL, 0, 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#8b5e3c';
+            ctx.fill();
             ctx.restore();
+        } else {
+            originalDraw();
         }
     };
 
