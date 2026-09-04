@@ -13,20 +13,20 @@
     const CHAR_SPEED = 3.6;
 
     const TAS_MENZIL = 140;
-    const TAS_HASAR = 1500;
+    const TAS_HASAR = 1650;
     const TAS_HIZ = PLAYER_BULLET_SPEED * 0.65;
-    const TAS_SEKME_HAKKI = 2;
-    const ENGELE_HASAR = 200;
-    const PARCA_HASAR = 200;
+    const TAS_SEKME_HAKKI = 10;
+    const ENGELE_HASAR = 50;
+    const PARCA_HASAR = 350;
     const PARCA_SAYISI = 9;
     const PARCA_HIZ = PLAYER_BULLET_SPEED * 0.55;
     const PARCA_MENZIL = 90;
     const PARCA_MAX_ACI = Math.PI / 3;
 
     const ULTI_YARICAP = 108;
-    const ULTI_TABAN_HASAR = 500;
+    const ULTI_TABAN_HASAR = 700;
     const ULTI_KNOCKBACK = 25;
-    const ULTI_CAN = 250;
+    const ULTI_CAN = 350;
     const ULTI_DOLUM_LIMIT = 90;
 
     // Aksesuar 1: Patlayan Taş
