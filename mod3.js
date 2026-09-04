@@ -1,8 +1,10 @@
-// ========== mod4.js (TAŞÇI) - ULTİ GÖSTERGE, CEPHANE DÜZELTME, AKSESUAR ==========
-// - Ulti nişan alırken etki alanı yarı saydam daire ile gösterilir.
-// - Cephane barı düzeltildi (nişan alırken bozulmuyor).
-// - Yeni aksesuar: 6 saniye boyunca ana taş 2 düşmana, parçalar 1 düşmana delebilir.
-// - Ulti dolumu %10 daha hızlı (90 şarjda hazır).
+// ========== mod4.js (TAŞÇI) - AKSESUAR GÜNCELLEME, ULTİ İYİLEŞTİRME ==========
+// - Aksesuar butonu artık her karede zorla gösteriliyor.
+// - Aksesuar: sonraki temel saldırıda ana taş iki kez parçalanır.
+//   İlk parçalanmadan sonra taş yok olmaz, kısa bir mesafe daha gider,
+//   ikinci kez parçalanır ve yok olur. Düşmana çarparsa +500 ek hasar.
+// - Ulti can iyileştirmesi 250'ye çıkarıldı.
+// - Ulti alanı %40 küçültüldü (180 -> 108).
 
 (function () {
     'use strict';
@@ -23,14 +25,15 @@
     const PARCA_MENZIL = 90;
     const PARCA_MAX_ACI = Math.PI / 3;
 
-    const ULTI_YARICAP = 180;
+    const ULTI_YARICAP = 108;   // %40 küçültüldü (180 * 0.6)
     const ULTI_TABAN_HASAR = 500;
     const ULTI_KNOCKBACK = 25;
-    const ULTI_CAN = 200;
-    const ULTI_DOLUM_LIMIT = 90; // %10 daha hızlı
+    const ULTI_CAN = 250;       // 200 -> 250
+    const ULTI_DOLUM_LIMIT = 90;
 
-    const AKSESUAR_SURE = 360;   // 6 saniye (60fps)
     const AKSESUAR_COOLDOWN = 900; // 15 saniye
+    const AKSESUAR_EK_HASAR = 500;
+    const IKINCI_PARCALANMA_MESAFE = 80; // ilk parçalanmadan sonra bu kadar daha gider
 
     window.GAME_EXT.characters[CHAR_ID] = { color: CHAR_COLOR, hp: CHAR_HP, speed: CHAR_SPEED };
 
@@ -46,7 +49,7 @@
         card.innerHTML =
             '<div class="char-color-preview" style="background:' + CHAR_COLOR + ';"></div>' +
             '<span>Taşçı</span>' +
-            '<small>Hasar: 1500<br>Ulti: Sismik Dalga<br>Aksesuar: Delici Taş</small>';
+            '<small>Hasar: 1500<br>Ulti: Sismik Dalga<br>Aksesuar: Çift Parçalanma</small>';
         container.appendChild(card);
         card.addEventListener('click', () => {
             selectedCharacter = CHAR_ID;
@@ -74,11 +77,14 @@
     Player.prototype.setCharacter = function (type) {
         originalSetCharacter.call(this, type);
         if (type === CHAR_ID) {
-            if (gadgetBtn) gadgetBtn.style.display = 'flex';
+            if (gadgetBtn) {
+                gadgetBtn.style.display = 'flex';
+                gadgetBtn.innerHTML = 'ÇİFT<br>PARÇALA<br><span id="gadget-timer"></span>';
+                gadgetBtn.classList.remove('cooldown');
+            }
             if (gadgetBtn2) gadgetBtn2.style.display = 'none';
-            gadgetBtn.innerHTML = 'DELİCİ<br>TAŞ<br><span id="gadget-timer"></span>';
-            this.tasciDeliciAktif = false;
-            this.tasciDeliciSure = 0;
+            this.tasciAksesuarHazir = false;
+            this.tasciAksesuarBeklemede = false;
             tasciKayalar = [];
             tasciParcalar = [];
             this.ultReady = false;
@@ -94,7 +100,7 @@
         if (this.charType !== CHAR_ID) return originalFire.call(this, a, pullOverride);
         if (this.ammo < 1 || this.isDead) return;
 
-        const delici = this.tasciDeliciAktif && this.tasciDeliciSure > 0;
+        const ozelAtis = this.tasciAksesuarHazir;
 
         tasciKayalar.push({
             x: this.x, y: this.y,
@@ -105,10 +111,19 @@
             hasar: TAS_HASAR,
             isDead: false,
             rotasyon: Math.random() * Math.PI * 2,
-            piercing: delici,
-            maxPierce: 2,
+            // Aksesuar özellikleri
+            ozelAtis: ozelAtis,
+            ilkParcalanmaYapildi: false,
+            ekHasar: AKSESUAR_EK_HASAR,
             hitTargets: []
         });
+
+        // Aksesuar bayrağını tüket
+        if (ozelAtis) {
+            this.tasciAksesuarHazir = false;
+            addFloatingNumber(this.x, this.y - 30, "ÇİFT PARÇALANMA!", CHAR_COLOR);
+        }
+
         this.consumeAmmo();
         this.lastShotTime = Date.now();
     };
@@ -118,13 +133,13 @@
     Player.prototype.activateGadget = function (a, pull) {
         if (this.charType !== CHAR_ID) return originalActivateGadget.call(this, a, pull);
         if (!this.gadgetReady || this.isDead) return;
-        this.tasciDeliciAktif = true;
-        this.tasciDeliciSure = AKSESUAR_SURE;
+
+        this.tasciAksesuarHazir = true;
         this.gadgetReady = false;
         this.gadgetCooldown = AKSESUAR_COOLDOWN;
         if (gadgetBtn) gadgetBtn.classList.add('cooldown');
         if (gadgetTimerText) gadgetTimerText.innerText = Math.ceil(AKSESUAR_COOLDOWN / 60) + "s";
-        addFloatingNumber(this.x, this.y - 30, "DELİCİ TAŞ!", CHAR_COLOR);
+        addFloatingNumber(this.x, this.y - 30, "AKSESUAR HAZIR!", CHAR_COLOR);
     };
 
     // ---- FireUlti override: Sismik Dalga ----
@@ -193,7 +208,7 @@
             ctx2.lineTo(-9, 5);
             ctx2.lineTo(2, 11);
             ctx2.closePath();
-            ctx2.fillStyle = '#8b5e3c';
+            ctx2.fillStyle = b.ozelAtis ? '#a0522d' : '#8b5e3c'; // özel taş daha koyu
             ctx2.fill();
             ctx2.strokeStyle = '#3e2710';
             ctx2.lineWidth = 2;
@@ -248,7 +263,6 @@
             const sapma = -PARCA_MAX_ACI + (i - 1) * adim;
             acilar.push(sapma);
         }
-        const delici = player.tasciDeliciAktif && player.tasciDeliciSure > 0;
         acilar.forEach(sapma => {
             const aci = anaAci + sapma;
             tasciParcalar.push({
@@ -259,8 +273,6 @@
                 hasar: PARCA_HASAR,
                 isDead: false,
                 rotasyon: Math.random() * Math.PI * 2,
-                piercing: delici,
-                maxPierce: 1,
                 hitTargets: []
             });
         });
@@ -276,14 +288,9 @@
         if (player.charType === CHAR_ID && ultiBtn && ultiBtn.style.display !== 'flex') {
             ultiBtn.style.display = 'flex';
         }
-
-        // Aksesuar süresi
-        if (player.charType === CHAR_ID && player.tasciDeliciAktif) {
-            player.tasciDeliciSure -= ts;
-            if (player.tasciDeliciSure <= 0) {
-                player.tasciDeliciAktif = false;
-                player.tasciDeliciSure = 0;
-            }
+        // Aksesuar butonunu da zorla göster
+        if (player.charType === CHAR_ID && gadgetBtn && gadgetBtn.style.display !== 'flex') {
+            gadgetBtn.style.display = 'flex';
         }
 
         // Toplu parça hasar yazıları
@@ -337,29 +344,57 @@
             }
 
             const mesafe = getDist(t, { x: t.sx, y: t.sy });
+
+            // Menzil sonu kontrolü
             if (mesafe >= TAS_MENZIL) {
+                if (t.ozelAtis && !t.ilkParcalanmaYapildi) {
+                    // İlk parçalanma: taşı yok etme, menzili sıfırla ve devam et
+                    tasciParcala(t);
+                    t.ilkParcalanmaYapildi = true;
+                    t.sx = t.x; t.sy = t.y; // menzili sıfırla
+                    // Biraz daha kısa mesafe ver
+                    // (ikinci parçalanma için özel menzil değişkeni kullanabiliriz)
+                    // Burada basitçe aynı menzili tekrar kullanıyoruz ama istersen daha kısa yapabilirsin.
+                    // Biz IKINCI_PARCALANMA_MESAFE'yi kullanacağız.
+                    // Ancak mevcut yapıda mesafe TAS_MENZIL ile karşılaştırılıyor.
+                    // Bunun için taşa ikinciMenzilLimiti ekleyelim.
+                    t.ikinciMenzilLimiti = IKINCI_PARCALANMA_MESAFE;
+                    // Ayrıca taşın rengini değiştirebiliriz (koyu)
+                    t.ozelAtis = false; // ikinci parçalanmadan sonra normal olacak
+                } else if (t.ozelAtis && t.ilkParcalanmaYapildi) {
+                    // İkinci parçalanma: yok et
+                    tasciParcala(t);
+                    t.isDead = true;
+                } else {
+                    // Normal taş: menzil sonunda parçalan ve yok ol
+                    tasciParcala(t);
+                    t.isDead = true;
+                }
+                continue;
+            }
+
+            // Eğer ikinci menzil limiti varsa onu kontrol et
+            if (t.ikinciMenzilLimiti && mesafe >= t.ikinciMenzilLimiti) {
                 tasciParcala(t);
                 t.isDead = true;
                 continue;
             }
 
-            // Taşın düşmanlara çarpması (delici özellik destekli)
+            // Taşın düşmanlara çarpması
+            let vurdu = false;
             getActiveEnemies().forEach(e => {
-                if (t.isDead) return;
+                if (t.isDead || vurdu) return;
                 if (t.hitTargets && t.hitTargets.includes(e)) return;
                 if (getDist(t, e) < e.radius + 11) {
-                    e.hp -= t.hasar;
-                    addFloatingNumber(e.x, e.y, t.hasar, CHAR_COLOR);
-                    spawnParticles(e.x, e.y, CHAR_COLOR, 'normal');
-                    if (t.piercing) {
-                        if (!t.hitTargets) t.hitTargets = [];
-                        t.hitTargets.push(e);
-                        if (t.hitTargets.length >= t.maxPierce) {
-                            t.isDead = true;
-                        }
-                    } else {
-                        t.isDead = true;
+                    let toplamHasar = t.hasar;
+                    if (t.ozelAtis || t.ilkParcalanmaYapildi) {
+                        toplamHasar += AKSESUAR_EK_HASAR;
                     }
+                    e.hp -= toplamHasar;
+                    addFloatingNumber(e.x, e.y, toplamHasar, CHAR_COLOR);
+                    spawnParticles(e.x, e.y, CHAR_COLOR, 'normal');
+                    vurdu = true;
+                    t.isDead = true;
                 }
             });
         }
@@ -384,23 +419,15 @@
                 continue;
             }
 
+            let vurdu = false;
             getActiveEnemies().forEach(e => {
-                if (p.isDead) return;
-                if (p.hitTargets && p.hitTargets.includes(e)) return;
-                if (getDist(p, e) < e.radius + 8) {
+                if (!vurdu && getDist(p, e) < e.radius + 8) {
                     e.hp -= p.hasar;
                     e._tasciBekleyenHasar = (e._tasciBekleyenHasar || 0) + p.hasar;
                     e._tasciSonHasarZamani = Date.now();
                     spawnParticles(e.x, e.y, '#8b5e3c', 'normal');
-                    if (p.piercing) {
-                        if (!p.hitTargets) p.hitTargets = [];
-                        p.hitTargets.push(e);
-                        if (p.hitTargets.length >= p.maxPierce) {
-                            p.isDead = true;
-                        }
-                    } else {
-                        p.isDead = true;
-                    }
+                    vurdu = true;
+                    p.isDead = true;
                 }
             });
         }
