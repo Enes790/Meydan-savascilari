@@ -1,4 +1,4 @@
-// ========== mod5.js (ÇARPIŞÇI) - SON GÜNCELLEME ==========
+// ========== mod5.js (ÇARPIŞÇI) - DONMA DÜZELTME + OPTİMİZASYON ==========
 // Karakter: Çarpışçı
 // Saldırı: Önce yerinde alan hasarı (patlama), sonra dash.
 // Dash sırasında temas hasarı 400, can kazancı 50/düşman.
@@ -20,12 +20,12 @@
     const DASH_TEMAS_HASAR = 400;
     const DASH_TEMAS_CAN = 50;
     const CEPhane_MAKS = 3;
-    const RELOAD_SPEED = 0.025; // hızlı
+    const RELOAD_SPEED = 0.025;
 
     // Ulti
     const ULTI_ALAN_YARICAP = 180;
-    const ULTI_SURE = 360; // 6 saniye (60fps)
-    const ULTI_YAVASLATMA_ORANI = 0.5; // %50 yavaşlatma
+    const ULTI_SURE = 360; // 6 saniye
+    const ULTI_YAVASLATMA_ORANI = 0.5;
     const ULTI_CEKIM_HASAR = 100;
     const ULTI_CEKIM_GUCU = 30;
 
@@ -97,7 +97,7 @@
                 if (mesafe <= ULTI_ALAN_YARICAP + e.radius) {
                     e.hp -= ULTI_CEKIM_HASAR;
                     addFloatingNumber(e.x, e.y, ULTI_CEKIM_HASAR, "#ff6b35");
-                    const ang = getAngle(e, this); // bot -> oyuncu
+                    const ang = getAngle(e, this);
                     e.kbX = Math.cos(ang) * ULTI_CEKIM_GUCU;
                     e.kbY = Math.sin(ang) * ULTI_CEKIM_GUCU;
                 }
@@ -113,7 +113,7 @@
         this.lastShotTime = Date.now();
     };
 
-    // ---- fireUlti override (nişan gerektirmez) ----
+    // ---- fireUlti override ----
     const originalFireUlti = Player.prototype.fireUlti;
     Player.prototype.fireUlti = function (a) {
         if (this.charType !== CHAR_ID) return originalFireUlti.call(this, a);
@@ -152,33 +152,36 @@
             // Ulti butonunu zorla görünür tut
             if (ultiBtn && ultiBtn.style.display !== 'flex') ultiBtn.style.display = 'flex';
 
-            // Ulti alanı süresi
+            // Ulti alanı yavaşlatma (daha verimli: her kare değil, sadece durum değişikliğinde)
             if (player.carpisciUltiAktif) {
                 player.carpisciUltiSure -= ts;
                 if (player.carpisciUltiSure <= 0) {
                     player.carpisciUltiAktif = false;
                     player.carpisciUltiSure = 0;
-                    // Yavaşlatmayı geri al (alan bitince tüm botların hızını normale döndür)
+                    // Tüm botların hızını geri yükle
                     getActiveEnemies().forEach(e => {
-                        if (e.carpisciOrijinalHiz !== undefined) {
-                            e.speed = e.carpisciOrijinalHiz;
-                            delete e.carpisciOrijinalHiz;
+                        if (e._carpisciYavaslatildi) {
+                            e.speed = e._carpisciOrijinalHiz;
+                            delete e._carpisciYavaslatildi;
+                            delete e._carpisciOrijinalHiz;
                         }
                     });
                 } else {
-                    // Alan içindeki botları yavaşlat
                     getActiveEnemies().forEach(e => {
                         const mesafe = getDist(player, e);
                         if (mesafe <= ULTI_ALAN_YARICAP + e.radius) {
-                            if (e.carpisciOrijinalHiz === undefined) {
-                                e.carpisciOrijinalHiz = e.speed;
+                            // Yavaşlat uygula (sadece ilk kez)
+                            if (!e._carpisciYavaslatildi) {
+                                e._carpisciOrijinalHiz = e.speed;
+                                e.speed = e._carpisciOrijinalHiz * ULTI_YAVASLATMA_ORANI;
+                                e._carpisciYavaslatildi = true;
                             }
-                            e.speed = e.carpisciOrijinalHiz * ULTI_YAVASLATMA_ORANI;
                         } else {
                             // Alan dışına çıktıysa hızını geri ver
-                            if (e.carpisciOrijinalHiz !== undefined) {
-                                e.speed = e.carpisciOrijinalHiz;
-                                delete e.carpisciOrijinalHiz;
+                            if (e._carpisciYavaslatildi) {
+                                e.speed = e._carpisciOrijinalHiz;
+                                delete e._carpisciYavaslatildi;
+                                delete e._carpisciOrijinalHiz;
                             }
                         }
                     });
@@ -215,15 +218,16 @@
         }
     };
 
-    // ---- Nişan çizgisi (orijinali engelle) ----
+    // ---- Nişan çizgisi (daha güvenli: orijinal draw'u hiç değiştirmeden sadece ek çizim) ----
     const originalDraw = window.draw;
     window.draw = function () {
-        if (player.charType === CHAR_ID && aimData.active && player.ammo >= 1 && !player.isDead) {
-            const geciciAim = aimData.active;
-            aimData.active = false;
-            originalDraw();
-            aimData.active = geciciAim;
+        // Önce orijinal çizimi yap (nişan dahil)
+        originalDraw();
 
+        if (!gameStarted || player.charType !== CHAR_ID) return;
+
+        // Kendi nişan göstergemizi orijinalin üstüne çiz (çakışma olmaz, şeffaf alanlar)
+        if (aimData.active && player.ammo >= 1 && !player.isDead) {
             ctx.save();
             ctx.translate(player.x, player.y);
             ctx.rotate(aimData.angle);
@@ -235,7 +239,7 @@
             ctx.setLineDash([8, 6]);
             ctx.strokeRect(0, -5, DASH_MESAFE, 10);
             ctx.setLineDash([]);
-            // Başlangıç alan göstergesi (patlama alanı)
+            // Başlangıç alan göstergesi
             ctx.beginPath();
             ctx.arc(0, 0, BASLANGIC_ALAN_YARICAP, 0, Math.PI * 2);
             ctx.fillStyle = 'rgba(255, 107, 53, 0.2)';
@@ -244,12 +248,10 @@
             ctx.lineWidth = 2;
             ctx.stroke();
             ctx.restore();
-        } else {
-            originalDraw();
         }
 
-        // Ulti alanı göstergesi (aktifken)
-        if (player.charType === CHAR_ID && player.carpisciUltiAktif) {
+        // Ulti alanı göstergesi
+        if (player.carpisciUltiAktif) {
             ctx.save();
             ctx.translate(player.x, player.y);
             ctx.beginPath();
