@@ -1,10 +1,8 @@
-// ========== mod7.js (BUZUL ÇAĞI) - TAM GÜNCELLEME ==========
-// - Buz Bumerangı kaldırıldı.
-// - Buz Cevheri eklendi: 1600 can, 5 saniyede bir doğar, siperlerden %70 çıkar.
-// - Kamp Ateşi siperi eklendi: 3000 can, 8 sn dayanır, kömür +4 sn, %10 mermi yavaşlatma.
-// - Kömür sistemi: Buz Cevheri ölünce bırakır, otomatik toplanır, kamp ateşi yoksa işlevsiz.
-// - Botlar kamp ateşine kilitlenebilir (oyuncudan yakınsa).
-// - Spawn limitleri: Buz Botu max 3, Ciritçi max 2, Buz Cevheri max 3.
+// ========== mod7.js (BUZUL ÇAĞI) - SON GÜNCELLEME ==========
+// - Kamp ateşi: ilk 5. killde gelir, sonra 20 killde bir geri gelir, maks 1.
+// - Buz Cevheri: 1600 can, yavaş, yakın mesafeden tek mermi (300 hasar), zehir etkisi.
+// - Kömür: küçük, geri sayım yok, dokunarak veya hasar alarak toplanır, 8 sn sonra dönüşüm.
+// - Buz Bumerangı kaldırıldı. Buz Botu ve Ciritçi güncellendi.
 
 (function () {
     'use strict';
@@ -42,31 +40,30 @@
 
     // Buz Cevheri
     const CEVHER_HP = 1600;
-    const CEVHER_SPEED = 1.6;
+    const CEVHER_SPEED = 1.0;
     const CEVHER_RADIUS = 18;
     const CEVHER_SPAWN_INTERVAL = 300;    // 5 saniye
-    const CEVHER_SPAWN_WARN = 90;         // 1.5 saniye uyarı
-    const CEVHER_MERMI_HASAR = 40;
-    const CEVHER_BUZ_ALEV_HASAR = 15;     // saniyede
+    const CEVHER_SPAWN_WARN = 90;
+    const CEVHER_MERMI_HASAR = 300;
+    const CEVHER_BUZ_ALEV_HASAR = 15;
     const CEVHER_BUZ_ALEV_SURE = 180;     // 3 saniye
-    const CEVHER_KONI_ACI = (130 * Math.PI) / 180; // 130 derece
-    const CEVHER_MERMI_SAYISI = 8;
-    const CEVHER_MERMI_ARALIK = 6;        // 0.1 saniye (60fps)
-    const CEVHER_SALDIRI_INTERVAL = 2000; // 2 saniyede bir
+    const CEVHER_SALDIRI_INTERVAL = 2000; // 2 saniye
     const CEVHER_KOMUR_SURE = 480;        // 8 saniye
 
     // Kamp Ateşi
     const KAMP_HP = 3000;
-    const KAMP_DOGAL_OMUR = 480;          // 8 saniye (frame)
+    const KAMP_DOGAL_OMUR = 480;          // 8 saniye
     const KAMP_CAN_KAYBI = 375 / 60;      // saniyede 375
     const KAMP_AURA_YARICAP = 130;
-    const KAMP_IYILESTIRME = 200;         // saniyede oyuncuya
-    const KAMP_DUSMAN_YAVASLATMA = 0.5;   // %50 yavaşlatma
-    const KAMP_MERMI_YAVASLATMA = 0.1;    // %10 mermi yavaşlatma
+    const KAMP_IYILESTIRME = 200;
+    const KAMP_DUSMAN_YAVASLATMA = 0.5;
+    const KAMP_MERMI_YAVASLATMA = 0.1;
     const KAMP_DALGA_HASAR = 600;
     const KAMP_DALGA_YAVASLATMA = 2;      // 2 saniye
     const KAMP_KILL_GERI_GELME = 20;
+    const KAMP_ILK_GELME_KILL = 5;
     const KAMP_KOMUR_SURE_EKLE = 240;     // +4 saniye
+    const KAMP_KOMUR_CAN_EKLE = 500;
 
     let buzSlimeLari = [];
     let buzBotlari = [];
@@ -81,7 +78,7 @@
     let cevherSpawnTimer = 0;
     let cevherSpawnUyarilari = [];
     let sonTemasZamani = {};
-    let kampYokOlduktanSonraKills = 0;
+    let toplamOldurulen = 0;
 
     const originalSpawnObstacle = window.spawnObstacle;
 
@@ -102,7 +99,7 @@
             cevherSpawnTimer = 0;
             cevherSpawnUyarilari = [];
             sonTemasZamani = {};
-            kampYokOlduktanSonraKills = 0;
+            toplamOldurulen = 0;
 
             bot.isActive = false; bot.isDead = true;
             bot2.isActive = false; bot2.isDead = true;
@@ -245,30 +242,30 @@
                 }
             }
 
-            // Kamp Ateşi: 20 kill sonra geri gelir
+            // Kamp Ateşi kontrolü
             if (!kampAtesi) {
-                if (kampYokOlduktanSonraKills >= KAMP_KILL_GERI_GELME) {
-                    kampAtesi = {
-                        x: canvas.width / 2,
-                        y: canvas.height / 2,
-                        radius: 35,
-                        hp: KAMP_HP,
-                        maxHp: KAMP_HP,
-                        kalanSure: KAMP_DOGAL_OMUR,
-                        aktif: true
-                    };
-                    kampYokOlduktanSonraKills = 0;
-                    addFloatingNumber(kampAtesi.x, kampAtesi.y - 40, "KAMP ATEŞİ ÇIKTI!", "#f1c40f");
+                if (toplamOldurulen >= KAMP_ILK_GELME_KILL && kampAtesi === null) {
+                    // İlk kamp ateşi 5. killde, sonra 20 killde bir
+                    if (toplamOldurulen === KAMP_ILK_GELME_KILL || toplamOldurulen % KAMP_KILL_GERI_GELME === 0) {
+                        kampAtesi = {
+                            x: canvas.width / 2,
+                            y: canvas.height / 2,
+                            radius: 35,
+                            hp: KAMP_HP,
+                            maxHp: KAMP_HP,
+                            kalanSure: KAMP_DOGAL_OMUR,
+                            aktif: true
+                        };
+                        addFloatingNumber(kampAtesi.x, kampAtesi.y - 40, "KAMP ATEŞİ ÇIKTI!", "#f1c40f");
+                    }
                 }
             } else if (kampAtesi.aktif) {
-                // Kamp ateşi can kaybı
                 kampAtesi.hp -= KAMP_CAN_KAYBI * ts;
                 kampAtesi.kalanSure -= ts;
 
                 // Aura etkileri
                 if (!player.isDead && getDist(player, kampAtesi) < KAMP_AURA_YARICAP + player.radius) {
                     player.hp = Math.min(player.maxHp, player.hp + KAMP_IYILESTIRME * ts / 60);
-                    if (Math.random() < 0.02) addFloatingNumber(player.x, player.y - 20, "+" + KAMP_IYILESTIRME, "#2ecc71");
                 }
 
                 getActiveEnemies().forEach(e => {
@@ -279,7 +276,6 @@
                     }
                 });
 
-                // Mermi yavaşlatma
                 botBullets.forEach(b => {
                     if (getDist(b, kampAtesi) < KAMP_AURA_YARICAP) {
                         b.vx *= (1 - KAMP_MERMI_YAVASLATMA);
@@ -288,7 +284,6 @@
                 });
 
                 if (kampAtesi.hp <= 0 || kampAtesi.kalanSure <= 0) {
-                    // Ateş dalgası
                     getActiveEnemies().forEach(e => {
                         if (getDist(kampAtesi, e) < 200 + e.radius) {
                             e.hp -= KAMP_DALGA_HASAR;
@@ -299,7 +294,6 @@
                     explosions.push({x: kampAtesi.x, y: kampAtesi.y, radius: 10, maxRadius: 200, life: 20, maxLife: 20});
                     screenShake = 8;
                     kampAtesi = null;
-                    kampYokOlduktanSonraKills = 0;
                     addFloatingNumber(canvas.width/2, canvas.height/2, "ATEŞ DALGASI!", "#f1c40f");
                 }
             }
@@ -309,11 +303,11 @@
                 const k = komurlar[i];
                 k.timer -= ts;
 
-                // Oyuncuya dokunursa otomatik toplanır
-                if (!player.isDead && getDist(player, k) < player.radius + 12) {
+                // Oyuncuya dokunursa toplanır
+                if (!player.isDead && getDist(player, k) < player.radius + 10) {
                     if (kampAtesi && kampAtesi.aktif) {
                         kampAtesi.kalanSure += KAMP_KOMUR_SURE_EKLE;
-                        kampAtesi.hp = Math.min(kampAtesi.maxHp, kampAtesi.hp + 500);
+                        kampAtesi.hp = Math.min(kampAtesi.maxHp, kampAtesi.hp + KAMP_KOMUR_CAN_EKLE);
                         addFloatingNumber(k.x, k.y, "+4 SN", "#f1c40f");
                     } else {
                         addFloatingNumber(k.x, k.y, "KAMP YOK", "#e74c3c");
@@ -322,8 +316,25 @@
                     continue;
                 }
 
+                // Mermi hasarı alırsa toplanır (oyuncu mermisi)
+                for (let j = bullets.length - 1; j >= 0; j--) {
+                    const mermi = bullets[j];
+                    if (getDist(mermi, k) < 10) {
+                        if (kampAtesi && kampAtesi.aktif) {
+                            kampAtesi.kalanSure += KAMP_KOMUR_SURE_EKLE;
+                            kampAtesi.hp = Math.min(kampAtesi.maxHp, kampAtesi.hp + KAMP_KOMUR_CAN_EKLE);
+                            addFloatingNumber(k.x, k.y, "+4 SN", "#f1c40f");
+                        } else {
+                            addFloatingNumber(k.x, k.y, "KAMP YOK", "#e74c3c");
+                        }
+                        bullets.splice(j, 1);
+                        komurlar.splice(i, 1);
+                        break;
+                    }
+                }
+
                 // Süresi biterse Buz Cevheri doğar
-                if (k.timer <= 0) {
+                if (komurlar[i] && k.timer <= 0) {
                     if (buzCevherleri.length < 3) {
                         buzCevherleri.push(cevherOlustur(k.x, k.y));
                     }
@@ -372,7 +383,6 @@
                 }
                 if (c.isDead) { ciritciBotlari.splice(i, 1); continue; }
 
-                // Kamp ateşi hedef kontrolü
                 let hedefX, hedefY;
                 if (kampAtesi && kampAtesi.aktif && getDist(c, kampAtesi) < getDist(c, player)) {
                     hedefX = kampAtesi.x;
@@ -440,7 +450,6 @@
                 }
                 if (b.isDead) { buzBotlari.splice(i, 1); continue; }
 
-                // Kamp ateşi hedef
                 let hedefX, hedefY;
                 if (kampAtesi && kampAtesi.aktif && getDist(b, kampAtesi) < getDist(b, player)) {
                     hedefX = kampAtesi.x;
@@ -500,7 +509,6 @@
                 if (c.hp <= 0 && !c.isDead) {
                     c.isDead = true;
                     spawnParticles(c.x, c.y, '#ff6b35', 'normal');
-                    // Kömür bırak
                     komurlar.push({x: c.x, y: c.y, timer: CEVHER_KOMUR_SURE});
                     addFloatingNumber(c.x, c.y - 20, "KÖMÜR!", "#8b4513");
                     triggerBotKill(c.x, c);
@@ -517,39 +525,18 @@
                         c.y += Math.sin(c.angle) * c.speed * ts;
                     }
 
-                    // Koni saldırı
+                    // Yakın mesafeden tek mermi
                     if (d < 120 && Date.now() - c.lastShot > CEVHER_SALDIRI_INTERVAL) {
                         c.lastShot = Date.now();
-                        c.mermiSayaç = 0;
-                        c.saldiriAktif = true;
-                    }
-
-                    if (c.saldiriAktif) {
-                        c.mermiSayaç += ts;
-                        if (c.mermiSayaç >= CEVHER_MERMI_ARALIK) {
-                            c.mermiSayaç = 0;
-                            c.atilanMermi = (c.atilanMermi || 0) + 1;
-
-                            const merkezAci = c.angle;
-                            const baslangic = merkezAci - CEVHER_KONI_ACI / 2;
-                            const bitis = merkezAci + CEVHER_KONI_ACI / 2;
-                            const rastgeleAci = baslangic + Math.random() * (bitis - baslangic);
-
-                            botBullets.push({
-                                x: c.x, y: c.y,
-                                sx: c.x, sy: c.y,
-                                vx: Math.cos(rastgeleAci) * BOT_BULLET_SPEED * 0.9,
-                                vy: Math.sin(rastgeleAci) * BOT_BULLET_SPEED * 0.9,
-                                dmgMod: 0,
-                                type: 'buz_cevheri_alev',
-                                owner: c
-                            });
-
-                            if (c.atilanMermi >= CEVHER_MERMI_SAYISI) {
-                                c.saldiriAktif = false;
-                                c.atilanMermi = 0;
-                            }
-                        }
+                        botBullets.push({
+                            x: c.x, y: c.y,
+                            sx: c.x, sy: c.y,
+                            vx: Math.cos(c.angle) * BOT_BULLET_SPEED * 0.9,
+                            vy: Math.sin(c.angle) * BOT_BULLET_SPEED * 0.9,
+                            dmgMod: 0,
+                            type: 'buz_cevheri_alev',
+                            owner: c
+                        });
                     }
                 }
 
@@ -579,7 +566,7 @@
             cevherSpawnTimer = 0;
             cevherSpawnUyarilari = [];
             sonTemasZamani = {};
-            kampYokOlduktanSonraKills = 0;
+            toplamOldurulen = 0;
 
             if (originalSpawnObstacle) {
                 window.spawnObstacle = originalSpawnObstacle;
@@ -587,7 +574,6 @@
         }
     };
 
-    // Buz Cevheri oluşturma yardımcı fonksiyonu
     function cevherOlustur(x, y) {
         return {
             x, y,
@@ -596,13 +582,11 @@
             speed: CEVHER_SPEED, baseSpeed: CEVHER_SPEED,
             angle: 0,
             lastShot: 0,
-            saldiriAktif: false,
-            mermiSayaç: 0,
-            atilanMermi: 0,
             isDead: false, isActive: true,
             color: '#8e44ad',
             kbX: 0, kbY: 0,
-            oSp: CEVHER_SPEED, oR: CEVHER_RADIUS
+            oSp: CEVHER_SPEED, oR: CEVHER_RADIUS,
+            yurumeAnim: 0
         };
     }
 
@@ -627,7 +611,7 @@
             originalOnEnemyKilled(enemy);
         }
         if (window.GAME_MODE === MOD_ID) {
-            kampYokOlduktanSonraKills++;
+            toplamOldurulen++;
         }
     };
 
@@ -654,7 +638,6 @@
                         player.hp -= CEVHER_MERMI_HASAR;
                         addFloatingNumber(player.x, player.y, CEVHER_MERMI_HASAR, "#ff6b35");
                         player.lastHitTime = Date.now();
-                        // Buz alevi etkisi birikebilir
                         player.buzAleviSure = (player.buzAleviSure || 0) + CEVHER_BUZ_ALEV_SURE;
                         addFloatingNumber(player.x, player.y - 20, "BUZ ALEVİ!", "#8e44ad");
                         list.splice(i, 1);
@@ -678,7 +661,6 @@
                 player.hp -= CEVHER_BUZ_ALEV_HASAR;
                 addFloatingNumber(player.x, player.y, CEVHER_BUZ_ALEV_HASAR, "#8e44ad");
             }
-            // Yenilenmeyi engelle
             player.lastHitTime = Date.now();
             if (player.buzAleviSure <= 0) player.buzAleviSure = 0;
         }
@@ -729,19 +711,27 @@
             ctx.stroke();
             ctx.setLineDash([]);
 
-            // Ateş
+            // Gövde (mor siperin renkli hali)
+            ctx.fillStyle = '#d35400';
+            ctx.beginPath();
+            ctx.roundRect(-kampAtesi.radius, -kampAtesi.radius, kampAtesi.radius * 2, kampAtesi.radius * 2, 10);
+            ctx.fill();
+            ctx.strokeStyle = '#e67e22';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // Ateş animasyonu
             for (let k = 0; k < 5; k++) {
                 const alevAci = (k / 5) * Math.PI * 2 + Date.now() / 300;
-                const alevBoy = 20 + Math.sin(Date.now() / 100 + k) * 5;
+                const alevBoy = 15 + Math.sin(Date.now() / 100 + k) * 5;
                 ctx.fillStyle = '#f1c40f';
                 ctx.beginPath();
-                ctx.arc(Math.cos(alevAci) * 15, Math.sin(alevAci) * 15, 8, 0, Math.PI * 2);
+                ctx.arc(Math.cos(alevAci) * 12, Math.sin(alevAci) * 12, 6, 0, Math.PI * 2);
                 ctx.fill();
             }
-            // Merkez ateş
             ctx.fillStyle = '#e67e22';
             ctx.beginPath();
-            ctx.arc(0, 0, 12 + Math.sin(Date.now() / 150) * 3, 0, Math.PI * 2);
+            ctx.arc(0, 0, 10 + Math.sin(Date.now() / 150) * 3, 0, Math.PI * 2);
             ctx.fill();
 
             // Can barı
@@ -807,19 +797,17 @@
 
         // Kömürler
         komurlar.forEach(k => {
+            const alpha = Math.max(0.3, k.timer / CEVHER_KOMUR_SURE);
             ctx.save();
             ctx.translate(k.x, k.y);
+            ctx.globalAlpha = alpha;
             ctx.fillStyle = '#8b4513';
             ctx.beginPath();
             ctx.arc(0, 0, 8, 0, Math.PI * 2);
             ctx.fill();
             ctx.strokeStyle = '#3e2710';
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 1.5;
             ctx.stroke();
-            ctx.fillStyle = '#f1c40f';
-            ctx.font = "bold 8px Arial";
-            ctx.textAlign = "center";
-            ctx.fillText(Math.ceil(k.timer / 60), 0, 3);
             ctx.restore();
         });
 
@@ -930,12 +918,17 @@
             ctx.save();
             ctx.translate(c.x, c.y);
 
+            // Yürüme animasyonu: hafif dikey salınım
+            const yurumeOffset = c.hiz ? Math.sin(Date.now() / 150) * 2 : 0;
+            ctx.translate(0, yurumeOffset);
+
+            // Can barı
             ctx.fillStyle = '#e74c3c';
             ctx.fillRect(-20, -c.radius - 15, 40, 5);
             ctx.fillStyle = '#2ecc71';
             ctx.fillRect(-20, -c.radius - 15, 40 * (c.hp / c.maxHp), 5);
 
-            // Gövde (normal bot formu)
+            // Gövde (mor)
             ctx.rotate(c.angle);
             ctx.fillStyle = '#8e44ad';
             ctx.beginPath();
@@ -945,15 +938,15 @@
             ctx.lineWidth = 2;
             ctx.stroke();
 
-            // Üzerinde cevher (parlak kristal)
+            // Sırtında kristal (doğal, gömülü)
             ctx.fillStyle = '#ff6b35';
             ctx.shadowColor = '#ff6b35';
-            ctx.shadowBlur = 10;
+            ctx.shadowBlur = 8;
             ctx.beginPath();
-            ctx.moveTo(0, -14);
-            ctx.lineTo(5, -7);
-            ctx.lineTo(0, 0);
-            ctx.lineTo(-5, -7);
+            ctx.moveTo(4, -12);
+            ctx.lineTo(10, -6);
+            ctx.lineTo(4, -2);
+            ctx.lineTo(-2, -6);
             ctx.closePath();
             ctx.fill();
             ctx.shadowBlur = 0;
@@ -961,10 +954,10 @@
             // Gözler
             ctx.fillStyle = '#fff';
             ctx.beginPath();
-            ctx.arc(8, -5, 3.5, 0, Math.PI * 2);
+            ctx.arc(8, -5, 3, 0, Math.PI * 2);
             ctx.fill();
             ctx.beginPath();
-            ctx.arc(8, 5, 3.5, 0, Math.PI * 2);
+            ctx.arc(8, 5, 3, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore();
         });
