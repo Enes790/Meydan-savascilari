@@ -1,14 +1,17 @@
 // ============================================================================
-// KARAKTER: YAPRAKÇI (mod2.js) — v3
+// KARAKTER: YAPRAKÇI (mod2.js) — v4
 // ----------------------------------------------------------------------------
 // BU SÜRÜMDE DEĞİŞENLER:
-// 1) "Süper hasar" geri alındı - MID/SIDE/RAIN hasarları orijinal değerlere
-//    (500/400/400) döndü. İtiş (KNOCKBACK_MAG=50) olduğu gibi bırakıldı
-//    (geri alınması istenmedi).
-// 2) ULTİ eklendi: Ninja'nın zaman alanıyla aynı yarıçapta (114) bir alan
-//    oluşturur. Alandaki düşmanlar saniyede 150 hasar alır VE yavaşlar.
-//    Oyuncu kendi alanının içindeyken attığı yapraklar düşmana İKİ KEZ
-//    vurur, artı 300 sabit bonus hasar ekler.
+// 1) İtiş tekrar ÇOK küçüldü (50 -> 2.5) - önceki "sanki uçuyormuş gibi"
+//    isteği geri alındı, en baştaki "çok çok çok az" isteğine dönüldü.
+// 2) Siper hasarı 150 -> 30.
+// 3) Ulti alanı süresi 6sn -> 4sn (240 kare).
+// 4) Alan görseli iyileştirildi: radyal gradyan dolgu, nabız gibi atan dış
+//    çember, dönen iç kesikli halka (ninja'nın alanına benzer ama kendi
+//    temasında).
+// 5) Yaprak mermisi görseli iyileştirildi: damar detaylı yaprak, gölge,
+//    ve doğuş anında küçükten büyüğe büyüyen ("yavaş girme") animasyon.
+// 6) Mermi hızı biraz daha azaltıldı (normalin %85'i -> %75'i).
 // ============================================================================
 
 (function () {
@@ -19,27 +22,28 @@
     const CHAR_HP = 2600;    // [VARSAYIM]
     const CHAR_SPEED = 4.2;  // [VARSAYIM]
 
-    const LEAF_RANGE = 420 * 0.85; // 357 (önceki turda %15 küçültülmüştü)
-    const LEAF_BULLET_SPEED = PLAYER_BULLET_SPEED * 0.85;
-    const MID_DAMAGE = 500;   // orijinaline döndürüldü
-    const SIDE_DAMAGE = 400;  // orijinaline döndürüldü
+    const LEAF_RANGE = 420 * 0.85; // 357
+    const LEAF_BULLET_SPEED = PLAYER_BULLET_SPEED * 0.75; // biraz daha yavaşlatıldı
+    const MID_DAMAGE = 500;
+    const SIDE_DAMAGE = 400;
     const SIDE_OFFSET = 12;
     const SIDE_DELAY_MS = 100;
-    const KNOCKBACK_MAG = 50; // önceki turda istenen güçlü itiş - korunuyor
+    const KNOCKBACK_MAG = 2.5; // ÇOK ÇOK ÇOK az itiş - orijinal isteğe dönüldü
     const LEAF_HIT_PAD = 8;
-    const OBSTACLE_DAMAGE = 150;
+    const OBSTACLE_DAMAGE = 30; // 150 -> 30
 
     const RAIN_COUNT = 6;
     const RAIN_SPREAD = Math.PI / 3;
-    const RAIN_DAMAGE = 400; // yan yaprak hasarıyla eşleştirildi (orijinal)
+    const RAIN_DAMAGE = 400;
     const RAIN_COOLDOWN_FRAMES = 900;
 
-    // Ulti sabitleri
-    const ULTI_ZONE_RADIUS = 114; // "ninjaninki kadar" - ninja'nın güncel zaman alanı yarıçapı
-    const ULTI_ZONE_DURATION = 360; // 6 saniye (ninja'nınkiyle aynı süre)
+    const ULTI_ZONE_RADIUS = 114;
+    const ULTI_ZONE_DURATION = 240; // 4 saniye (6sn'den kısaltıldı)
     const ULTI_ZONE_DPS = 150;
-    const ULTI_SLOW_FACTOR = 0.4; // [VARSAYIM] yavaşlatma oranı belirtilmedi, %60 yavaşlatma seçtim
+    const ULTI_SLOW_FACTOR = 0.4;
     const ULTI_BONUS_DAMAGE = 300;
+
+    const SPAWN_GROW_FRAMES = 10; // mermi doğarken küçükten büyüğe büyüme süresi
 
     window.GAME_EXT.characters[CHAR_ID] = { color: CHAR_COLOR, hp: CHAR_HP, speed: CHAR_SPEED };
 
@@ -64,7 +68,7 @@
         leafBullets.push({
             x, y, sx: x, sy: y,
             vx: Math.cos(angle) * LEAF_BULLET_SPEED, vy: Math.sin(angle) * LEAF_BULLET_SPEED,
-            angle, dmg
+            angle, dmg, age: 0
         });
     }
 
@@ -110,15 +114,12 @@
         if (gadgetBtn) gadgetBtn.classList.add('cooldown');
     };
 
-    // ------------------------------------------------------------------
-    // Ulti: yavaşlatan + hasar veren alan
-    // ------------------------------------------------------------------
     const originalFireUlti = Player.prototype.fireUlti;
     Player.prototype.fireUlti = function (a, pullOverride) {
         if (this.charType !== CHAR_ID) return originalFireUlti.call(this, a, pullOverride);
         if (!this.ultReady || this.isDead) return;
 
-        leafZones.push({ x: this.x, y: this.y, radius: ULTI_ZONE_RADIUS, life: ULTI_ZONE_DURATION, tickTimer: 0 });
+        leafZones.push({ x: this.x, y: this.y, radius: ULTI_ZONE_RADIUS, life: ULTI_ZONE_DURATION, maxLife: ULTI_ZONE_DURATION, tickTimer: 0 });
         addFloatingNumber(this.x, this.y - 40, "YAPRAK ALANI!", "#229954");
 
         this.ultReady = false; this.ultCharge = 0;
@@ -158,8 +159,6 @@
 
     chainHook('onReset', function () {
         leafBullets = [];
-        // Yavaşlatılmış düşmanların hızını geri yükle (obje referansları
-        // zaten temizleniyor ama garanti olsun diye)
         leafZones = [];
     });
 
@@ -183,28 +182,66 @@
             ctx2.restore();
         }
 
-        // Ulti alanları
+        // --- Güzelleştirilmiş ulti alanı ---
         leafZones.forEach(z => {
+            const lifeRatio = Math.max(0, z.life / z.maxLife);
+            const pulse = 1 + Math.sin(Date.now() / 180) * 0.04;
             ctx2.save();
             ctx2.translate(z.x, z.y);
-            ctx2.globalAlpha = Math.min(0.9, z.life / 60) * 0.35;
-            ctx2.beginPath(); ctx2.arc(0, 0, z.radius, 0, Math.PI * 2);
-            ctx2.fillStyle = '#229954'; ctx2.fill();
-            ctx2.globalAlpha = Math.min(0.9, z.life / 60);
-            ctx2.strokeStyle = '#2ecc71'; ctx2.lineWidth = 3; ctx2.setLineDash([10, 15]);
+
+            // Radyal gradyan dolgu
+            const grad = ctx2.createRadialGradient(0, 0, 0, 0, 0, z.radius * pulse);
+            grad.addColorStop(0, `rgba(46, 204, 113, ${0.28 * lifeRatio})`);
+            grad.addColorStop(0.7, `rgba(34, 153, 84, ${0.18 * lifeRatio})`);
+            grad.addColorStop(1, `rgba(34, 153, 84, 0)`);
+            ctx2.beginPath(); ctx2.arc(0, 0, z.radius * pulse, 0, Math.PI * 2);
+            ctx2.fillStyle = grad; ctx2.fill();
+
+            // Dış nabız çemberi
+            ctx2.globalAlpha = 0.8 * lifeRatio;
+            ctx2.beginPath(); ctx2.arc(0, 0, z.radius * pulse, 0, Math.PI * 2);
+            ctx2.strokeStyle = '#2ecc71'; ctx2.lineWidth = 2.5; ctx2.setLineDash([]);
             ctx2.stroke();
+
+            // Dönen iç kesikli halka
+            ctx2.rotate(Date.now() / 500);
+            ctx2.globalAlpha = 0.7 * lifeRatio;
+            ctx2.beginPath(); ctx2.arc(0, 0, z.radius * 0.82, 0, Math.PI * 2);
+            ctx2.strokeStyle = '#a9dfbf'; ctx2.lineWidth = 2; ctx2.setLineDash([9, 14]);
+            ctx2.stroke();
+            ctx2.setLineDash([]);
             ctx2.restore();
         });
 
+        // --- Güzelleştirilmiş yaprak mermisi ---
         leafBullets.forEach(b => {
+            const growT = Math.min(1, (b.age || 0) / SPAWN_GROW_FRAMES);
+            const scale = 0.35 + 0.65 * growT; // küçükten büyüğe
             ctx2.save();
             ctx2.translate(b.x, b.y);
             ctx2.rotate(b.angle);
-            ctx2.beginPath(); ctx2.moveTo(-11, 0); ctx2.lineTo(-4, 0);
-            ctx2.strokeStyle = '#6b4226'; ctx2.lineWidth = 2; ctx2.setLineDash([]); ctx2.stroke();
+            ctx2.scale(scale, scale);
+
+            // Hafif gölge
+            ctx2.beginPath(); ctx2.ellipse(1, 2, 9, 5, 0, 0, Math.PI * 2);
+            ctx2.fillStyle = 'rgba(0,0,0,0.25)'; ctx2.fill();
+
+            // Ahşap sap
+            ctx2.beginPath(); ctx2.moveTo(-12, 0); ctx2.lineTo(-4, 0);
+            ctx2.strokeStyle = '#6b4226'; ctx2.lineWidth = 2; ctx2.stroke();
+
+            // Yaprak gövdesi (gradyanlı)
+            const leafGrad = ctx2.createLinearGradient(-6, 0, 8, 0);
+            leafGrad.addColorStop(0, '#1e8449');
+            leafGrad.addColorStop(1, '#2ecc71');
             ctx2.beginPath(); ctx2.ellipse(2, 0, 9, 5, 0, 0, Math.PI * 2);
-            ctx2.fillStyle = '#27ae60'; ctx2.fill();
-            ctx2.strokeStyle = '#1e8449'; ctx2.lineWidth = 1.5; ctx2.stroke();
+            ctx2.fillStyle = leafGrad; ctx2.fill();
+            ctx2.strokeStyle = '#145a32'; ctx2.lineWidth = 1.5; ctx2.stroke();
+
+            // Orta damar
+            ctx2.beginPath(); ctx2.moveTo(-6, 0); ctx2.lineTo(10, 0);
+            ctx2.strokeStyle = 'rgba(20,90,50,0.6)'; ctx2.lineWidth = 1; ctx2.stroke();
+
             ctx2.restore();
         });
     });
@@ -235,7 +272,6 @@
     }
 
     function leafUpdate(ts) {
-        // --- Ulti alanları: hasar + yavaşlatma ---
         for (let i = leafZones.length - 1; i >= 0; i--) {
             const z = leafZones[i];
             z.life -= ts;
@@ -267,9 +303,9 @@
             }
         }
 
-        // --- Mermiler ---
         for (let i = leafBullets.length - 1; i >= 0; i--) {
             const b = leafBullets[i];
+            b.age = (b.age || 0) + ts;
             b.x += b.vx * ts; b.y += b.vy * ts;
 
             const hw = b.x < WALL_THICKNESS + 5 || b.x > canvas.width - (WALL_THICKNESS + 5) ||
@@ -293,7 +329,6 @@
             for (const e of getActiveEnemies()) {
                 if (getDist(b, e) < e.radius + LEAF_HIT_PAD) {
                     if (playerInOwnZone()) {
-                        // Alan içindeyken: iki kez vurur + 300 sabit bonus
                         e.hp -= b.dmg; addFloatingNumber(e.x, e.y - 6, b.dmg, "#27ae60");
                         e.hp -= b.dmg; addFloatingNumber(e.x, e.y + 10, b.dmg, "#27ae60");
                         e.hp -= ULTI_BONUS_DAMAGE; addFloatingNumber(e.x, e.y + 24, ULTI_BONUS_DAMAGE, "#f1c40f");
