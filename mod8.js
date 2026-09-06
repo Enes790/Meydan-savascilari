@@ -1,6 +1,8 @@
-// ========== mod7.js (BUZUL ÇAĞI) ==========
+
+// ========== mod7.js (BUZUL ÇAĞI) - GÜNCELLENMİŞ ==========
 // Mod: Buzul Çağı
-// Buz Siperi: Sabit engel, 3000 can, yok edilince 2 Buz Slime doğurur.
+// Normal siperler buz siperi gibi davranır: yok edilince 2 Buz Slime doğurur.
+// Buz Botu: 5000 can, yakın dövüş, temas hasarı 600 + itme, ölünce patlama (68 yarıçap, 200 hasar).
 // Buz Slime: Küçük (radius 12), hızlı (2.5), temas hasarı 150.
 // Klasik botlar tamamen kapalı.
 
@@ -9,31 +11,38 @@
 
     const MOD_ID = 'buzul';
 
-    // Buz Siperi
-    const SIPER_HP = 3000;
-    const SIPER_RADIUS = 35;
-    const SIPER_SPAWN_INTERVAL = 480; // 8 saniyede bir
-    const SIPER_SPAWN_WARN = 90;       // 1.5 saniye uyarı
-
     // Buz Slime
     const SLIME_HP = 600;
     const SLIME_SPEED = 2.5;
     const SLIME_RADIUS = 12;
     const SLIME_DAMAGE = 150;
 
-    let buzlSiperler = [];
+    // Buz Botu
+    const BUZ_BOT_HP = 5000;
+    const BUZ_BOT_SPEED = 1.0;
+    const BUZ_BOT_RADIUS = 22;
+    const BUZ_BOT_TEMAS_HASAR = 600;
+    const BUZ_BOT_ITME_GUCU = 40;          // güçlü itme
+    const BUZ_BOT_PATLAMA_YARICAP = 68;    // ninja alanının %40 küçüğü
+    const BUZ_BOT_PATLAMA_HASAR = 200;
+    const BUZ_BOT_SPAWN_INTERVAL = 600;    // 10 saniyede bir
+    const BUZ_BOT_SPAWN_WARN = 90;
+
     let buzSlimeLari = [];
-    let siperSpawnTimer = 0;
-    let siperSpawnUyarilari = [];
+    let buzBotlari = [];
+    let buzBotSpawnTimer = 0;
+    let buzBotSpawnUyarilari = [];
+    let oncekiEngeller = []; // normal siperleri takip için
 
     // ========== MOD TANIMI ==========
     window.GAME_EXT.modes[MOD_ID] = {
         label: 'Buzul Çağı',
         onStart: function () {
-            buzlSiperler = [];
             buzSlimeLari = [];
-            siperSpawnTimer = 0;
-            siperSpawnUyarilari = [];
+            buzBotlari = [];
+            buzBotSpawnTimer = 0;
+            buzBotSpawnUyarilari = [];
+            oncekiEngeller = [];
             player.buzulYavaslatma = 0;
 
             // Klasik botları kapat
@@ -54,55 +63,17 @@
             fogBotTimer = 0;
             spawnIndicators = [];
 
-            // --- Buz Siperi Spawn ---
-            siperSpawnTimer += ts;
-            if (siperSpawnTimer >= SIPER_SPAWN_INTERVAL && buzlSiperler.length < 5) {
-                siperSpawnTimer = 0;
-                const x = Math.random() * (canvas.width - 200) + 100;
-                const y = Math.random() * (canvas.height - 200) + 100;
-                siperSpawnUyarilari.push({ x, y, timer: SIPER_SPAWN_WARN });
-            }
-
-            for (let i = siperSpawnUyarilari.length - 1; i >= 0; i--) {
-                const u = siperSpawnUyarilari[i];
-                u.timer -= ts;
-                if (u.timer <= 0) {
-                    buzlSiperler.push({
-                        x: u.x, y: u.y,
-                        radius: SIPER_RADIUS,
-                        hp: SIPER_HP,
-                        maxHp: SIPER_HP,
-                        isDead: false,
-                        isActive: true,
-                        isNest: false,
-                        isFog: false,
-                        color: '#5dade2',
-                        kbX: 0, kbY: 0,
-                        bombaBulasti: false,
-                        bombaSayaci: 0,
-                        ghostRingDebounce: 0,
-                        alerted: false,
-                        stage: 0,
-                        oSp: 0,
-                        oR: SIPER_RADIUS
-                    });
-                    siperSpawnUyarilari.splice(i, 1);
-                }
-            }
-
-            // --- Buz Siperi Güncelleme (yok edilince slime doğur) ---
-            for (let i = buzlSiperler.length - 1; i >= 0; i--) {
-                const s = buzlSiperler[i];
-
-                // Can kontrolü
-                if (s.hp <= 0 && !s.isDead) {
-                    s.isDead = true;
-                    // 2 Buz Slime doğur
+            // ========== NORMAL SİPERLERDEN BUZ SLIME DOĞURMA ==========
+            // Mevcut engelleri kontrol et, hp'si 0'a düşenleri tespit et
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                const o = obstacles[i];
+                if (o.hp <= 0) {
+                    // Bu engel ölmek üzere, 2 Buz Slime doğur
                     for (let k = 0; k < 2; k++) {
                         const offsetX = (Math.random() - 0.5) * 30;
                         const offsetY = (Math.random() - 0.5) * 30;
                         buzSlimeLari.push({
-                            x: s.x + offsetX, y: s.y + offsetY,
+                            x: o.x + offsetX, y: o.y + offsetY,
                             radius: SLIME_RADIUS,
                             hp: SLIME_HP,
                             maxHp: SLIME_HP,
@@ -124,19 +95,112 @@
                             oR: SLIME_RADIUS
                         });
                     }
-                    spawnParticles(s.x, s.y, '#5dade2', 'normal');
-                    addFloatingNumber(s.x, s.y - 20, "BUZ SLIME ÇIKTI!", "#5dade2");
-                    buzlSiperler.splice(i, 1);
-                    continue;
+                    spawnParticles(o.x, o.y, '#5dade2', 'normal');
+                    addFloatingNumber(o.x, o.y - 20, "BUZ SLIME ÇIKTI!", "#5dade2");
                 }
-                if (s.isDead) { buzlSiperler.splice(i, 1); continue; }
-
-                // Siper sabit olduğu için hareket yok, sadece sınır kontrolü
-                s.x = clampPos(s.x, s.radius + WALL_THICKNESS, canvas.width - s.radius - WALL_THICKNESS);
-                s.y = clampPos(s.y, s.radius + WALL_THICKNESS, canvas.height - s.radius - WALL_THICKNESS);
             }
 
-            // --- Buz Slime Güncelleme ---
+            // ========== BUZ BOTU SPAWN ==========
+            buzBotSpawnTimer += ts;
+            if (buzBotSpawnTimer >= BUZ_BOT_SPAWN_INTERVAL && buzBotlari.length < 3) {
+                buzBotSpawnTimer = 0;
+                const x = Math.random() * (canvas.width - 200) + 100;
+                const y = Math.random() * (canvas.height - 200) + 100;
+                buzBotSpawnUyarilari.push({ x, y, timer: BUZ_BOT_SPAWN_WARN });
+            }
+
+            for (let i = buzBotSpawnUyarilari.length - 1; i >= 0; i--) {
+                const u = buzBotSpawnUyarilari[i];
+                u.timer -= ts;
+                if (u.timer <= 0) {
+                    buzBotlari.push({
+                        x: u.x, y: u.y,
+                        radius: BUZ_BOT_RADIUS,
+                        hp: BUZ_BOT_HP,
+                        maxHp: BUZ_BOT_HP,
+                        speed: BUZ_BOT_SPEED,
+                        baseSpeed: BUZ_BOT_SPEED,
+                        angle: 0,
+                        isDead: false,
+                        isActive: true,
+                        isNest: false,
+                        isFog: false,
+                        color: '#2e86c1',
+                        kbX: 0, kbY: 0,
+                        bombaBulasti: false,
+                        bombaSayaci: 0,
+                        ghostRingDebounce: 0,
+                        alerted: false,
+                        stage: 0,
+                        oSp: BUZ_BOT_SPEED,
+                        oR: BUZ_BOT_RADIUS,
+                        temasAtis: false
+                    });
+                    buzBotSpawnUyarilari.splice(i, 1);
+                }
+            }
+
+            // ========== BUZ BOTU GÜNCELLEME ==========
+            for (let i = buzBotlari.length - 1; i >= 0; i--) {
+                const b = buzBotlari[i];
+
+                // Can kontrolü
+                if (b.hp <= 0 && !b.isDead) {
+                    b.isDead = true;
+                    // Patlama
+                    if (!player.isDead && getDist(b, player) < BUZ_BOT_PATLAMA_YARICAP + player.radius) {
+                        player.hp -= BUZ_BOT_PATLAMA_HASAR;
+                        addFloatingNumber(player.x, player.y, BUZ_BOT_PATLAMA_HASAR, "#e74c3c");
+                        player.lastHitTime = Date.now();
+                    }
+                    spawnParticles(b.x, b.y, '#2e86c1', 'normal');
+                    screenShake = 8;
+                    triggerBotKill(b.x, b);
+                }
+                if (b.isDead) { buzBotlari.splice(i, 1); continue; }
+
+                // Görünmezlik kontrolü
+                const canSeePlayer = !player.isDead && !player.isInvisible;
+                if (canSeePlayer) {
+                    b.angle = Math.atan2(player.y - b.y, player.x - b.x);
+                    const d = getDist(b, player);
+                    // Uzaktan vuramaz, sadece yaklaşır
+                    if (d > b.radius + player.radius + 5) {
+                        b.x += Math.cos(b.angle) * b.speed * ts;
+                        b.y += Math.sin(b.angle) * b.speed * ts;
+                    } else {
+                        // Temas anı: 600 hasar + itme
+                        if (!b.temasAtis) {
+                            b.temasAtis = true;
+                            player.hp -= BUZ_BOT_TEMAS_HASAR;
+                            addFloatingNumber(player.x, player.y, BUZ_BOT_TEMAS_HASAR, "#e74c3c");
+                            player.lastHitTime = Date.now();
+                            // Oyuncuyu güçlü it
+                            const itmeAci = getAngle(b, player);
+                            player.kbX = Math.cos(itmeAci) * BUZ_BOT_ITME_GUCU;
+                            player.kbY = Math.sin(itmeAci) * BUZ_BOT_ITME_GUCU;
+                            // Bot biraz geri çekilsin
+                            b.kbX = -Math.cos(itmeAci) * 20;
+                            b.kbY = -Math.sin(itmeAci) * 20;
+                        }
+                    }
+                }
+
+                // Knockback uygula
+                if (Math.abs(b.kbX) > 0.1 || Math.abs(b.kbY) > 0.1) {
+                    b.x += b.kbX * ts;
+                    b.y += b.kbY * ts;
+                    b.kbX *= 0.85;
+                    b.kbY *= 0.85;
+                }
+
+                // Sınır kontrolü
+                b.x = clampPos(b.x, b.radius + WALL_THICKNESS, canvas.width - b.radius - WALL_THICKNESS);
+                b.y = clampPos(b.y, b.radius + WALL_THICKNESS, canvas.height - b.radius - WALL_THICKNESS);
+                resolveObstacleCollision(b);
+            }
+
+            // ========== BUZ SLIME GÜNCELLEME ==========
             for (let i = buzSlimeLari.length - 1; i >= 0; i--) {
                 const b = buzSlimeLari[i];
 
@@ -159,8 +223,6 @@
                 // Sınır kontrolü
                 b.x = clampPos(b.x, b.radius + WALL_THICKNESS, canvas.width - b.radius - WALL_THICKNESS);
                 b.y = clampPos(b.y, b.radius + WALL_THICKNESS, canvas.height - b.radius - WALL_THICKNESS);
-
-                // Engellerle çarpışma
                 resolveObstacleCollision(b);
 
                 // Oyuncuya temas hasarı
@@ -168,24 +230,16 @@
                     player.hp -= SLIME_DAMAGE;
                     addFloatingNumber(player.x, player.y, SLIME_DAMAGE, "#e74c3c");
                     player.lastHitTime = Date.now();
-                    b.hp = 0; // temas edince kendini yok et
-                }
-            }
-
-            // Buz Slime'lar için yavaşlatma etkisi (özel alan)
-            if (player.buzulYavaslatma > 0) {
-                player.buzulYavaslatma -= ts;
-                if (player.buzulYavaslatma <= 0) {
-                    player.buzulYavaslatma = 0;
-                    player.speed = player.originalSpeed;
+                    b.hp = 0;
                 }
             }
         },
         onReset: function () {
-            buzlSiperler = [];
             buzSlimeLari = [];
-            siperSpawnTimer = 0;
-            siperSpawnUyarilari = [];
+            buzBotlari = [];
+            buzBotSpawnTimer = 0;
+            buzBotSpawnUyarilari = [];
+            oncekiEngeller = [];
             player.buzulYavaslatma = 0;
         }
     };
@@ -197,8 +251,8 @@
         if (typeof originalGetExtraEnemies === 'function') {
             extras = originalGetExtraEnemies() || [];
         }
-        extras = extras.concat(buzlSiperler.filter(s => !s.isDead));
         extras = extras.concat(buzSlimeLari.filter(b => !b.isDead));
+        extras = extras.concat(buzBotlari.filter(b => !b.isDead));
         return extras;
     };
 
@@ -208,51 +262,58 @@
         originalDraw();
         if (!gameStarted || window.GAME_MODE !== MOD_ID) return;
 
-        // Siper spawn uyarıları
-        siperSpawnUyarilari.forEach(u => {
+        // Buz Botu spawn uyarıları
+        buzBotSpawnUyarilari.forEach(u => {
             ctx.save();
             ctx.translate(u.x, u.y);
             ctx.globalAlpha = Math.abs(Math.sin(Date.now() / 150));
             ctx.beginPath();
-            ctx.arc(0, 0, SIPER_RADIUS + 10, 0, Math.PI * 2);
-            ctx.strokeStyle = '#5dade2';
+            ctx.arc(0, 0, BUZ_BOT_RADIUS + 15, 0, Math.PI * 2);
+            ctx.strokeStyle = '#2e86c1';
             ctx.lineWidth = 3;
             ctx.stroke();
             ctx.globalAlpha = 1;
-            ctx.fillStyle = '#5dade2';
+            ctx.fillStyle = '#2e86c1';
             ctx.font = "bold 16px Arial";
             ctx.textAlign = "center";
             ctx.fillText(Math.ceil(u.timer / 60), 0, 6);
             ctx.restore();
         });
 
-        // Buz Siperleri
-        buzlSiperler.forEach(s => {
-            if (s.isDead) return;
+        // Buz Botları
+        buzBotlari.forEach(b => {
+            if (b.isDead) return;
             ctx.save();
-            ctx.translate(s.x, s.y);
+            ctx.translate(b.x, b.y);
             // Can barı
             ctx.fillStyle = '#e74c3c';
-            ctx.fillRect(-30, -s.radius - 15, 60, 5);
+            ctx.fillRect(-25, -b.radius - 15, 50, 5);
             ctx.fillStyle = '#2ecc71';
-            ctx.fillRect(-30, -s.radius - 15, 60 * (s.hp / s.maxHp), 5);
-            // Gövde (buz kristali görünümü)
-            ctx.fillStyle = '#5dade2';
+            ctx.fillRect(-25, -b.radius - 15, 50 * (b.hp / b.maxHp), 5);
+            // Gövde
+            ctx.rotate(b.angle);
+            ctx.fillStyle = '#2e86c1';
             ctx.beginPath();
-            ctx.moveTo(s.radius, 0);
-            ctx.lineTo(s.radius * 0.3, -s.radius);
-            ctx.lineTo(-s.radius * 0.8, -s.radius * 0.6);
-            ctx.lineTo(-s.radius * 0.6, s.radius * 0.4);
-            ctx.lineTo(s.radius * 0.4, s.radius);
-            ctx.closePath();
+            ctx.arc(0, 0, b.radius, 0, Math.PI * 2);
             ctx.fill();
-            ctx.strokeStyle = '#2e86c1';
+            ctx.strokeStyle = '#1a5276';
             ctx.lineWidth = 3;
             ctx.stroke();
-            // İç parlama
-            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            // Buz çatlakları
+            ctx.strokeStyle = '#aed6f1';
+            ctx.lineWidth = 1.5;
             ctx.beginPath();
-            ctx.arc(0, 0, s.radius * 0.4, 0, Math.PI * 2);
+            ctx.moveTo(-5, -8);
+            ctx.lineTo(3, 0);
+            ctx.lineTo(-4, 8);
+            ctx.stroke();
+            // Gözler
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(8, -5, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(8, 5, 4, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore();
         });
@@ -262,12 +323,10 @@
             if (b.isDead) return;
             ctx.save();
             ctx.translate(b.x, b.y);
-            // Can barı (küçük)
             ctx.fillStyle = '#e74c3c';
             ctx.fillRect(-10, -b.radius - 10, 20, 3);
             ctx.fillStyle = '#2ecc71';
             ctx.fillRect(-10, -b.radius - 10, 20 * (b.hp / b.maxHp), 3);
-            // Gövde
             ctx.rotate(b.angle);
             ctx.fillStyle = '#aed6f1';
             ctx.beginPath();
@@ -276,7 +335,6 @@
             ctx.strokeStyle = '#5dade2';
             ctx.lineWidth = 2;
             ctx.stroke();
-            // Gözler
             ctx.fillStyle = '#2e86c1';
             ctx.beginPath();
             ctx.arc(4, -3, 2, 0, Math.PI * 2);
@@ -296,7 +354,7 @@
         card.id = 'diff-buzul';
         card.innerHTML =
             '<span>Buzul Çağı</span>' +
-            '<small>Buz Siperleri + Buz Slime\'lar<br>Klasik botlar kapalı</small>';
+            '<small>Normal siperler buz keser<br>Buz Botu + Buz Slime</small>';
         track.appendChild(card);
         card.addEventListener('click', () => {
             document.querySelectorAll('.diff-card').forEach(c => c.classList.remove('selected'));
