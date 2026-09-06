@@ -210,6 +210,42 @@
             ctx2.strokeStyle = '#a9dfbf'; ctx2.lineWidth = 2; ctx2.setLineDash([9, 14]);
             ctx2.stroke();
             ctx2.setLineDash([]);
+
+            // İç desen: dönen küçük yaprak motifleri (üç farklı yarıçapta,
+            // ters yönlerde dönerek daha "canlı" bir doku hissi verir)
+            const drawMiniLeaf = (angle, dist, size) => {
+                ctx2.save();
+                ctx2.rotate(angle);
+                ctx2.translate(dist, 0);
+                ctx2.rotate(Math.PI / 2);
+                ctx2.beginPath(); ctx2.ellipse(0, 0, size, size * 0.55, 0, 0, Math.PI * 2);
+                ctx2.fillStyle = `rgba(169, 223, 191, ${0.55 * lifeRatio})`;
+                ctx2.fill();
+                ctx2.beginPath(); ctx2.moveTo(-size * 0.7, 0); ctx2.lineTo(size * 0.9, 0);
+                ctx2.strokeStyle = `rgba(20, 90, 50, ${0.4 * lifeRatio})`; ctx2.lineWidth = 1;
+                ctx2.stroke();
+                ctx2.restore();
+            };
+            ctx2.save();
+            ctx2.rotate(-Date.now() / 700); // dışa göre ters yönde döner
+            for (let i = 0; i < 5; i++) drawMiniLeaf((i * Math.PI * 2) / 5, z.radius * 0.5, 7);
+            ctx2.restore();
+            ctx2.save();
+            ctx2.rotate(Date.now() / 900);
+            for (let i = 0; i < 7; i++) drawMiniLeaf((i * Math.PI * 2) / 7, z.radius * 0.68, 5);
+            ctx2.restore();
+
+            // Merkezden dışa ince damar çizgileri (mandala benzeri doku)
+            ctx2.globalAlpha = 0.25 * lifeRatio;
+            ctx2.strokeStyle = '#a9dfbf'; ctx2.lineWidth = 1;
+            for (let i = 0; i < 8; i++) {
+                const veinAngle = (i * Math.PI * 2) / 8;
+                ctx2.beginPath();
+                ctx2.moveTo(Math.cos(veinAngle) * z.radius * 0.15, Math.sin(veinAngle) * z.radius * 0.15);
+                ctx2.lineTo(Math.cos(veinAngle) * z.radius * 0.78, Math.sin(veinAngle) * z.radius * 0.78);
+                ctx2.stroke();
+            }
+
             ctx2.restore();
         });
 
@@ -329,9 +365,9 @@
             for (const e of getActiveEnemies()) {
                 if (getDist(b, e) < e.radius + LEAF_HIT_PAD) {
                     if (playerInOwnZone()) {
+                        // DÜZELTME: artık iki kez değil, TEK vuruş + 300 sabit bonus
                         e.hp -= b.dmg; addFloatingNumber(e.x, e.y - 6, b.dmg, "#27ae60");
-                        e.hp -= b.dmg; addFloatingNumber(e.x, e.y + 10, b.dmg, "#27ae60");
-                        e.hp -= ULTI_BONUS_DAMAGE; addFloatingNumber(e.x, e.y + 24, ULTI_BONUS_DAMAGE, "#f1c40f");
+                        e.hp -= ULTI_BONUS_DAMAGE; addFloatingNumber(e.x, e.y + 10, ULTI_BONUS_DAMAGE, "#f1c40f");
                     } else {
                         e.hp -= b.dmg; addFloatingNumber(e.x, e.y, b.dmg, "#27ae60");
                     }
