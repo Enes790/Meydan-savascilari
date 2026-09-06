@@ -1,11 +1,9 @@
-// ========== mod7.js (BUZUL ÇAĞI) - HEYKEL DÜZELTMELERİ ==========
-// - Heykel efekti: Sam'in öfke modundaki gibi duman çıkarır (hafif).
-// - Heykel artık oyuncuya vuruyor: menzil 35'e çıkarıldı.
-// - Heykel hasarı: 100 (200'den düşürüldü).
-// - Heykel itme mesafesi: 25 (Buz Botu ile aynı).
-// - Heykel Tıraşı canı: 1000 (korundu).
-// - Heykel Tıraşı heykel varken aldığı hasar heykelden düşülür.
-// - Heykel Tıraşı hızı: 0.5, Heykel hızı: 0.6.
+// ========== mod7.js (BUZUL ÇAĞI) - HEYKEL GÜÇLENDİRİLDİ, GÖRSELLER İYİLEŞTİRİLDİ ==========
+// - Heykel hasarı: 20 (çok hızlı vuruşlarla sürekli baskı)
+// - Heykel saldırı aralığı: 100ms (20 kat daha hızlı)
+// - Heykel canı: 10800 (8000 + 2800)
+// - Heykel vuruşta oyuncuyu sürükler (itme 25)
+// - Heykel Tıraşı ve Heykel görselleri iyileştirildi
 
 (function () {
     'use strict';
@@ -44,7 +42,7 @@
 
     // Heykel Tıraşı
     const HEYKEL_TIRASI_HP = 1000;
-    const HEYKEL_TIRASI_SPEED = 0.5;        // hız düşürüldü
+    const HEYKEL_TIRASI_SPEED = 0.5;
     const HEYKEL_TIRASI_RADIUS = 18;
     const HEYKEL_TIRASI_MENZIL = 143;
     const HEYKEL_TIRASI_HASAR = 100;
@@ -53,12 +51,13 @@
     const HEYKEL_INSAA_SURESI = 360;
 
     // Heykel
-    const HEYKEL_HP = 8000;
-    const HEYKEL_SPEED = 0.6;               // hız düşürüldü
+    const HEYKEL_HP = 10800;              // 8000 + 2800
+    const HEYKEL_SPEED = 0.6;
     const HEYKEL_RADIUS = 30;
-    const HEYKEL_SALDIRI_HASAR = 100;       // hasar düşürüldü
-    const HEYKEL_ITME_MESAFE = 25;          // Buz Botu ile aynı
-    const HEYKEL_SALDIRI_MENZIL = 35;       // saldırı menzili eklendi
+    const HEYKEL_SALDIRI_HASAR = 20;      // düşük hasar, hızlı vuruş
+    const HEYKEL_ITME_MESAFE = 25;
+    const HEYKEL_SALDIRI_MENZIL = 35;
+    const HEYKEL_SALDIRI_ARALIK = 100;    // 100ms = 20 kat daha hızlı
     const HEYKEL_SALDIRI_CAN_KAYBI = 500;
     const HEYKEL_PASIF_CAN_KAYBI = 300;
     const HEYKEL_PASIF_KAYIP_ARALIK = 180;
@@ -252,13 +251,6 @@
                 }
                 if (h.isDead) { heykelTirasiBotlari.splice(i, 1); continue; }
 
-                // Hasar yönlendirme: heykel varsa gelen hasar heykelden düşülür
-                if (heykeller.length > 0) {
-                    const heykel = heykeller[0];
-                    // Heykel Tıraşı'nın canı hiç azalmaz, heykel korur
-                    // (kendi canını heykel ile paylaşır)
-                }
-
                 const canSeePlayer = !player.isDead && !player.isInvisible;
 
                 if (h.insaatSure === -1 && heykeller.length === 0 && canSeePlayer) {
@@ -269,7 +261,6 @@
 
                 if (h.insaatSure > 0) {
                     h.insaatSure -= ts;
-                    // Sam'in öfke modundaki gibi hafif duman
                     if (Math.random() < 0.2) {
                         spawnParticles(h.x + (Math.random()-0.5)*15, h.y + (Math.random()-0.5)*15, '#aed6f1', 'smoke');
                     }
@@ -358,9 +349,9 @@
                         hey.y += Math.sin(hey.angle) * hey.speed * ts;
                     }
 
-                    // Saldırı: menzil kontrolü düzeltildi
+                    // Saldırı: 100ms aralıklarla, 20 hasar
                     if (d < HEYKEL_SALDIRI_MENZIL + hey.radius + player.radius) {
-                        if (Date.now() - hey.lastShot > 2000) {
+                        if (Date.now() - hey.lastShot > HEYKEL_SALDIRI_ARALIK) {
                             hey.lastShot = Date.now();
                             player.hp -= HEYKEL_SALDIRI_HASAR;
                             addFloatingNumber(player.x, player.y, HEYKEL_SALDIRI_HASAR, "#85c1e9");
@@ -769,14 +760,21 @@
             ctx.restore();
         });
 
-        // Heykel Tıraşı
+        // Heykel Tıraşı (görsel iyileştirildi)
         heykelTirasiBotlari.forEach(h => {
             if (h.isDead) return;
             ctx.save();
             ctx.translate(h.x, h.y);
 
+            // Yürüme animasyonu
             const yurumeOffset = Math.sin(Date.now() / 150) * 2;
             ctx.translate(0, yurumeOffset);
+
+            // Gölge
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.beginPath();
+            ctx.ellipse(0, h.radius * 0.6, h.radius * 0.8, h.radius * 0.3, 0, 0, Math.PI * 2);
+            ctx.fill();
 
             ctx.fillStyle = '#e74c3c';
             ctx.fillRect(-18, -h.radius - 15, 36, 5);
@@ -784,6 +782,7 @@
             ctx.fillRect(-18, -h.radius - 15, 36 * (h.hp / h.maxHp), 5);
 
             ctx.rotate(h.angle);
+            // Gövde
             ctx.fillStyle = '#8e44ad';
             ctx.beginPath();
             ctx.arc(0, 0, h.radius, 0, Math.PI * 2);
@@ -792,43 +791,55 @@
             ctx.lineWidth = 2;
             ctx.stroke();
 
+            // Çekiç (buzdan)
             ctx.fillStyle = '#aed6f1';
-            ctx.fillRect(10, -2, 10, 4);
+            ctx.fillRect(10, -2, 8, 3);
+            ctx.fillStyle = '#85c1e9';
+            ctx.fillRect(18, -4, 4, 8);
 
+            // Gözler (parlak)
             ctx.fillStyle = '#fff';
+            ctx.shadowColor = '#fff';
+            ctx.shadowBlur = 3;
             ctx.beginPath();
             ctx.arc(8, -5, 3, 0, Math.PI * 2);
             ctx.fill();
             ctx.beginPath();
             ctx.arc(8, 5, 3, 0, Math.PI * 2);
             ctx.fill();
+            ctx.shadowBlur = 0;
             ctx.restore();
 
+            // İnşa göstergesi
             if (h.insaatSure > 0) {
                 ctx.save();
                 ctx.translate(h.x, h.y);
-                ctx.globalAlpha = 0.6;
+                ctx.globalAlpha = 0.7;
+                // İnşa çubuğu
+                const ilerleme = 1 - (h.insaatSure / HEYKEL_INSAA_SURESI);
+                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                ctx.fillRect(-20, -h.radius - 30, 40, 6);
                 ctx.fillStyle = '#85c1e9';
-                ctx.beginPath();
-                ctx.arc(0, -h.radius - 20, 10, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.globalAlpha = 1;
-                ctx.fillStyle = '#fff';
-                ctx.font = "bold 10px Arial";
-                ctx.textAlign = "center";
-                ctx.fillText(Math.ceil(h.insaatSure / 60), 0, -h.radius - 17);
+                ctx.fillRect(-20, -h.radius - 30, 40 * ilerleme, 6);
                 ctx.restore();
             }
         });
 
-        // Heykel
+        // Heykel (görsel iyileştirildi)
         heykeller.forEach(hey => {
             if (hey.isDead) return;
             ctx.save();
             ctx.translate(hey.x, hey.y);
 
+            // Yürüme animasyonu
             const yurumeOffset = Math.sin(Date.now() / 200) * 3;
             ctx.translate(0, yurumeOffset);
+
+            // Gölge
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.beginPath();
+            ctx.ellipse(0, hey.radius * 0.7, hey.radius * 0.9, hey.radius * 0.35, 0, 0, Math.PI * 2);
+            ctx.fill();
 
             ctx.fillStyle = '#e74c3c';
             ctx.fillRect(-30, -hey.radius - 15, 60, 5);
@@ -836,6 +847,7 @@
             ctx.fillRect(-30, -hey.radius - 15, 60 * (hey.hp / hey.maxHp), 5);
 
             ctx.rotate(hey.angle);
+            // Büyük buz golem gövdesi
             ctx.fillStyle = '#85c1e9';
             ctx.beginPath();
             ctx.moveTo(hey.radius, 0);
@@ -849,8 +861,16 @@
             ctx.lineWidth = 4;
             ctx.stroke();
 
-            if (hey.hp < hey.maxHp) {
-                ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+            // İç parlama
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.beginPath();
+            ctx.arc(0, 0, hey.radius * 0.4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Çatlaklar (can azaldıkça artar)
+            const hasarOrani = 1 - (hey.hp / hey.maxHp);
+            if (hasarOrani > 0.3) {
+                ctx.strokeStyle = `rgba(255,255,255,${Math.min(0.8, hasarOrani)})`;
                 ctx.lineWidth = 2;
                 ctx.beginPath();
                 ctx.moveTo(5, 0);
@@ -858,13 +878,32 @@
                 ctx.lineTo(10, 20);
                 ctx.stroke();
             }
+            if (hasarOrani > 0.6) {
+                ctx.beginPath();
+                ctx.moveTo(-8, 5);
+                ctx.lineTo(-15, 15);
+                ctx.stroke();
+            }
 
+            // Gözler (parlak, tehditkar)
             ctx.fillStyle = '#fff';
+            ctx.shadowColor = '#fff';
+            ctx.shadowBlur = 5;
             ctx.beginPath();
             ctx.arc(10, -6, 4, 0, Math.PI * 2);
             ctx.fill();
             ctx.beginPath();
             ctx.arc(10, 6, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // Göz bebekleri
+            ctx.fillStyle = '#1a5276';
+            ctx.beginPath();
+            ctx.arc(11, -6, 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(11, 6, 2, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore();
         });
