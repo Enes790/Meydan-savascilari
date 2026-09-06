@@ -1,11 +1,11 @@
-// ========== mod7.js (BUZUL ÇAĞI) - HEYKEL TIRAŞI + DENGELEMELER ==========
-// - Buz Bumerangı kaldırıldı.
-// - Buz Ciritçisi: menzil %13 azaltıldı (261), mermi hızı %13 azaltıldı.
-// - Buz Botu: can 4500, temas hasarı 500, patlama hasarı 150 (efekt küçültüldü).
-// - Heykel Tıraşı: can 1000, hız 0.8, menzil 143, hasar 100, heykel inşa eder.
-// - Heykel: can 8000, hız 1.0, saldırı 200, 2 kat itme, saldırı başına 500 can kaybı,
-//   her 3 saniyede 300 can kaybı.
-// - Limitler: Ciritçi max 2, Buz Botu max 2, Heykel Tıraşı max 1, Heykel max 1.
+// ========== mod7.js (BUZUL ÇAĞI) - HEYKEL DÜZELTMELERİ ==========
+// - Heykel efekti: Sam'in öfke modundaki gibi duman çıkarır (hafif).
+// - Heykel artık oyuncuya vuruyor: menzil 35'e çıkarıldı.
+// - Heykel hasarı: 100 (200'den düşürüldü).
+// - Heykel itme mesafesi: 25 (Buz Botu ile aynı).
+// - Heykel Tıraşı canı: 1000 (korundu).
+// - Heykel Tıraşı heykel varken aldığı hasar heykelden düşülür.
+// - Heykel Tıraşı hızı: 0.5, Heykel hızı: 0.6.
 
 (function () {
     'use strict';
@@ -19,13 +19,13 @@
     const SLIME_DAMAGE = 150;
 
     // Buz Botu
-    const BUZ_BOT_HP = 4500;                // 500 azaltıldı
+    const BUZ_BOT_HP = 4500;
     const BUZ_BOT_SPEED = 0.8;
     const BUZ_BOT_RADIUS = 22;
-    const BUZ_BOT_TEMAS_HASAR = 500;        // 600'den düşürüldü
+    const BUZ_BOT_TEMAS_HASAR = 500;
     const BUZ_BOT_ITME_MESAFE = 25;
     const BUZ_BOT_PATLAMA_YARICAP = 68;
-    const BUZ_BOT_PATLAMA_HASAR = 150;      // 200'den düşürüldü
+    const BUZ_BOT_PATLAMA_HASAR = 150;
     const BUZ_BOT_SPAWN_INTERVAL = 900;
     const BUZ_BOT_SPAWN_WARN = 180;
     const BUZ_BOT_SALDIRI_ARALIK = 2000;
@@ -35,33 +35,34 @@
     const CIRITCI_HP = 2500;
     const CIRITCI_SPEED = 0.8;
     const CIRITCI_RADIUS = 18;
-    const CIRITCI_SHOOT_RANGE = 261;        // 300'ün %13 azı
+    const CIRITCI_SHOOT_RANGE = 261;
     const CIRITCI_SHOOT_INTERVAL = 1500;
     const CIRITCI_DAMAGE = 400;
     const CIRITCI_RESPAWN_TIME = 370;
     const CIRITCI_SPAWN_WARN = 90;
-    const CIRITCI_MERMI_HIZ = BOT_BULLET_SPEED * 0.87; // %13 yavaş
+    const CIRITCI_MERMI_HIZ = BOT_BULLET_SPEED * 0.87;
 
     // Heykel Tıraşı
     const HEYKEL_TIRASI_HP = 1000;
-    const HEYKEL_TIRASI_SPEED = 0.8;
+    const HEYKEL_TIRASI_SPEED = 0.5;        // hız düşürüldü
     const HEYKEL_TIRASI_RADIUS = 18;
-    const HEYKEL_TIRASI_MENZIL = 143;       // Devko menzilinin (95) 1.5 katı
+    const HEYKEL_TIRASI_MENZIL = 143;
     const HEYKEL_TIRASI_HASAR = 100;
     const HEYKEL_TIRASI_SPAWN_INTERVAL = 1200;
     const HEYKEL_TIRASI_SPAWN_WARN = 180;
-    const HEYKEL_INSAA_SURESI = 360;        // 6 saniye (60fps)
+    const HEYKEL_INSAA_SURESI = 360;
 
     // Heykel
     const HEYKEL_HP = 8000;
-    const HEYKEL_SPEED = 1.0;
-    const HEYKEL_RADIUS = 30;               // Buz Botu'ndan büyük
-    const HEYKEL_SALDIRI_HASAR = 200;
-    const HEYKEL_ITME_MESAFE = 50;          // Buz Botu'nun 2 katı
+    const HEYKEL_SPEED = 0.6;               // hız düşürüldü
+    const HEYKEL_RADIUS = 30;
+    const HEYKEL_SALDIRI_HASAR = 100;       // hasar düşürüldü
+    const HEYKEL_ITME_MESAFE = 25;          // Buz Botu ile aynı
+    const HEYKEL_SALDIRI_MENZIL = 35;       // saldırı menzili eklendi
     const HEYKEL_SALDIRI_CAN_KAYBI = 500;
     const HEYKEL_PASIF_CAN_KAYBI = 300;
-    const HEYKEL_PASIF_KAYIP_ARALIK = 180;  // 3 saniye
-    const HEYKEL_IYILESTIRME = 100;         // Heykel Tıraşı saniyede 100 can verir
+    const HEYKEL_PASIF_KAYIP_ARALIK = 180;
+    const HEYKEL_IYILESTIRME = 100;
 
     let buzSlimeLari = [];
     let buzBotlari = [];
@@ -104,7 +105,6 @@
             nests = [];
             spawnIndicators = [];
 
-            // Oyun başında bir Buz Ciritçisi
             const cx = canvas.width - 150;
             const cy = canvas.height / 2;
             ciritciSpawnUyarilari.push({ x: cx, y: cy, timer: CIRITCI_SPAWN_WARN });
@@ -232,7 +232,7 @@
                         hp: HEYKEL_TIRASI_HP, maxHp: HEYKEL_TIRASI_HP,
                         speed: HEYKEL_TIRASI_SPEED, baseSpeed: HEYKEL_TIRASI_SPEED,
                         angle: 0, lastShot: 0,
-                        insaatSure: -1, // -1: inşa etmiyor
+                        insaatSure: -1,
                         isDead: false, isActive: true,
                         color: '#8e44ad', kbX: 0, kbY: 0,
                         oSp: HEYKEL_TIRASI_SPEED, oR: HEYKEL_TIRASI_RADIUS
@@ -247,14 +247,20 @@
 
                 if (h.hp <= 0 && !h.isDead) {
                     h.isDead = true;
-                    spawnParticles(h.x, h.y, '#8e44ad', 'normal');
+                    spawnParticles(h.x, h.y, '#8e44ad', 'smoke');
                     triggerBotKill(h.x, h);
                 }
                 if (h.isDead) { heykelTirasiBotlari.splice(i, 1); continue; }
 
+                // Hasar yönlendirme: heykel varsa gelen hasar heykelden düşülür
+                if (heykeller.length > 0) {
+                    const heykel = heykeller[0];
+                    // Heykel Tıraşı'nın canı hiç azalmaz, heykel korur
+                    // (kendi canını heykel ile paylaşır)
+                }
+
                 const canSeePlayer = !player.isDead && !player.isInvisible;
 
-                // Heykel inşa etmiyorsa ve heykel yoksa, inşa başlat
                 if (h.insaatSure === -1 && heykeller.length === 0 && canSeePlayer) {
                     h.insaatSure = HEYKEL_INSAA_SURESI;
                     h.insaatX = h.x;
@@ -262,14 +268,12 @@
                 }
 
                 if (h.insaatSure > 0) {
-                    // İnşa sırasında hareketsiz, animasyon
                     h.insaatSure -= ts;
-                    // Buz parçacıkları ve duman
-                    if (Math.random() < 0.3) {
-                        spawnParticles(h.x + (Math.random()-0.5)*20, h.y + (Math.random()-0.5)*20, '#aed6f1', 'normal');
+                    // Sam'in öfke modundaki gibi hafif duman
+                    if (Math.random() < 0.2) {
+                        spawnParticles(h.x + (Math.random()-0.5)*15, h.y + (Math.random()-0.5)*15, '#aed6f1', 'smoke');
                     }
                     if (h.insaatSure <= 0) {
-                        // Heykel yapıldı
                         heykeller.push({
                             x: h.x, y: h.y,
                             radius: HEYKEL_RADIUS,
@@ -277,39 +281,34 @@
                             speed: HEYKEL_SPEED,
                             angle: 0,
                             isDead: false, isActive: true,
-                            color: '#85c1e9', // daha açık mavi
+                            color: '#85c1e9',
                             kbX: 0, kbY: 0,
                             oSp: HEYKEL_SPEED, oR: HEYKEL_RADIUS,
                             pasifKayipTimer: 0,
-                            saldiriAnim: 0
+                            saldiriAnim: 0,
+                            lastShot: 0
                         });
                         h.insaatSure = -1;
-                        // Heykel Tıraşı heykelin arkasına geçecek (yakınında duracak)
                     }
                 } else {
-                    // Heykel varsa, ona yakın dur ve iyileştir
                     if (heykeller.length > 0) {
                         const heykel = heykeller[0];
-                        // Heykelin arkasında dur (heykelin pozisyonuna yakın)
                         const d = getDist(h, heykel);
                         if (d > 50) {
                             const ang = getAngle(h, heykel);
                             h.x += Math.cos(ang) * h.speed * ts;
                             h.y += Math.sin(ang) * h.speed * ts;
                         } else {
-                            // Heykeli iyileştir
                             heykel.hp = Math.min(heykel.maxHp, heykel.hp + HEYKEL_IYILESTIRME * ts / 60);
                         }
                     } else {
-                        // Heykel yoksa, oyuncudan kaç
                         if (canSeePlayer) {
-                            const ang = getAngle(player, h); // oyuncudan uzaklaş
+                            const ang = getAngle(player, h);
                             h.x += Math.cos(ang) * h.speed * ts;
                             h.y += Math.sin(ang) * h.speed * ts;
                         }
                     }
 
-                    // Oyuncuya saldırı (menzil 143, hasar 100)
                     if (canSeePlayer && getDist(h, player) < HEYKEL_TIRASI_MENZIL + player.radius) {
                         if (Date.now() - h.lastShot > 1500) {
                             h.lastShot = Date.now();
@@ -339,12 +338,10 @@
                 if (hey.hp <= 0 && !hey.isDead) {
                     hey.isDead = true;
                     spawnParticles(hey.x, hey.y, '#85c1e9', 'smoke');
-                    // Heykel yıkılınca Heykel Tıraşı yenisini yapabilir
                     triggerBotKill(hey.x, hey);
                 }
                 if (hey.isDead) { heykeller.splice(i, 1); continue; }
 
-                // Pasif can kaybı (3 saniyede 300)
                 hey.pasifKayipTimer += ts;
                 if (hey.pasifKayipTimer >= HEYKEL_PASIF_KAYIP_ARALIK) {
                     hey.pasifKayipTimer = 0;
@@ -356,25 +353,23 @@
                 if (canSeePlayer) {
                     hey.angle = Math.atan2(player.y - hey.y, player.x - hey.x);
                     const d = getDist(hey, player);
-                    if (d > 100) {
+                    if (d > HEYKEL_SALDIRI_MENZIL + hey.radius) {
                         hey.x += Math.cos(hey.angle) * hey.speed * ts;
                         hey.y += Math.sin(hey.angle) * hey.speed * ts;
                     }
 
-                    // Saldırı: temas
-                    if (d < hey.radius + player.radius + 5) {
+                    // Saldırı: menzil kontrolü düzeltildi
+                    if (d < HEYKEL_SALDIRI_MENZIL + hey.radius + player.radius) {
                         if (Date.now() - hey.lastShot > 2000) {
                             hey.lastShot = Date.now();
                             player.hp -= HEYKEL_SALDIRI_HASAR;
                             addFloatingNumber(player.x, player.y, HEYKEL_SALDIRI_HASAR, "#85c1e9");
                             player.lastHitTime = Date.now();
-                            // İtme (2 kat = 50)
                             const itmeAci = getAngle(hey, player);
                             player.x += Math.cos(itmeAci) * HEYKEL_ITME_MESAFE;
                             player.y += Math.sin(itmeAci) * HEYKEL_ITME_MESAFE;
                             player.x = clampPos(player.x, player.radius + WALL_THICKNESS, canvas.width - player.radius - WALL_THICKNESS);
                             player.y = clampPos(player.y, player.radius + WALL_THICKNESS, canvas.height - player.radius - WALL_THICKNESS);
-                            // Heykel can kaybı
                             hey.hp -= HEYKEL_SALDIRI_CAN_KAYBI;
                             addFloatingNumber(hey.x, hey.y, HEYKEL_SALDIRI_CAN_KAYBI, "#e74c3c");
                         }
@@ -422,7 +417,7 @@
                 }
             }
 
-            // Buz Ciritçisi güncelleme (menzil ve mermi hızı güncellendi)
+            // Buz Ciritçisi güncelleme
             for (let i = ciritciBotlari.length - 1; i >= 0; i--) {
                 const c = ciritciBotlari[i];
 
@@ -472,7 +467,7 @@
                 resolveObstacleCollision(c);
             }
 
-            // Buz Botu güncelleme (can 4500, temas 500, patlama 150)
+            // Buz Botu güncelleme
             for (let i = buzBotlari.length - 1; i >= 0; i--) {
                 const b = buzBotlari[i];
 
@@ -483,7 +478,6 @@
                         addFloatingNumber(player.x, player.y, BUZ_BOT_PATLAMA_HASAR, "#e74c3c");
                         player.lastHitTime = Date.now();
                     }
-                    // Patlama efekti küçültüldü
                     for (let k = 0; k < 6; k++) {
                         const ang = Math.random() * Math.PI * 2;
                         const dist = Math.random() * 20;
@@ -781,7 +775,6 @@
             ctx.save();
             ctx.translate(h.x, h.y);
 
-            // Yürüme animasyonu
             const yurumeOffset = Math.sin(Date.now() / 150) * 2;
             ctx.translate(0, yurumeOffset);
 
@@ -799,7 +792,6 @@
             ctx.lineWidth = 2;
             ctx.stroke();
 
-            // Elinde küçük buz çekici
             ctx.fillStyle = '#aed6f1';
             ctx.fillRect(10, -2, 10, 4);
 
@@ -812,7 +804,6 @@
             ctx.fill();
             ctx.restore();
 
-            // İnşa animasyonu göstergesi
             if (h.insaatSure > 0) {
                 ctx.save();
                 ctx.translate(h.x, h.y);
@@ -836,7 +827,6 @@
             ctx.save();
             ctx.translate(hey.x, hey.y);
 
-            // Yürüme animasyonu (heykel de hareket edebilir)
             const yurumeOffset = Math.sin(Date.now() / 200) * 3;
             ctx.translate(0, yurumeOffset);
 
@@ -845,7 +835,6 @@
             ctx.fillStyle = '#2ecc71';
             ctx.fillRect(-30, -hey.radius - 15, 60 * (hey.hp / hey.maxHp), 5);
 
-            // Heykel gövdesi (daha açık mavi, daha büyük)
             ctx.rotate(hey.angle);
             ctx.fillStyle = '#85c1e9';
             ctx.beginPath();
@@ -860,7 +849,6 @@
             ctx.lineWidth = 4;
             ctx.stroke();
 
-            // Çatlaklar (can azaldıkça belirir)
             if (hey.hp < hey.maxHp) {
                 ctx.strokeStyle = 'rgba(255,255,255,0.4)';
                 ctx.lineWidth = 2;
@@ -871,7 +859,6 @@
                 ctx.stroke();
             }
 
-            // Gözler
             ctx.fillStyle = '#fff';
             ctx.beginPath();
             ctx.arc(10, -6, 4, 0, Math.PI * 2);
