@@ -1,12 +1,10 @@
-// ========== mod7.js (BUZUL ÇAĞI) - GÜNCELLENMİŞ v3 ==========
-// - Buz Botu oyuncuyu 2.5 kare (yaklaşık 25 birim) iter, kendini itmez.
-// - Oyuncuya doğrudan konum değişikliği ile itme uygulanır (kbX/kbY değil).
-// - Patlama titreşimi kaldırıldı.
-// - Normal siperler buz renginde.
-// - Buz Botu daha iyi kristal görünümde.
-// - Spawn uyarısı 3 saniye.
-// - Mod seçim ekranı kaydırma düzeltmesi güçlendirildi.
-// - İkinci bot: Buz Ciritçisi (orta menzilli, yavaşlatma yapmaz).
+// ========== mod7.js (BUZUL ÇAĞI) - BUZ BUMERANGI EKLENDİ, İYİLEŞTİRMELER YAPILDI ==========
+// - Siperler üst üste binmesin (spawn mesafe kontrolü).
+// - Buz Bumerangı: dönen bot, etrafında buz alanı (yarıçap 68), oyuncuya 100/sn, siperlere 90/sn hasar.
+// - Buz Bumerangı görünümü: buz rengi, dönerken iz bırakır.
+// - Buz Botu hızı azaltıldı (0.8), vuruş ve ölüm animasyonu eklendi, spawn süresi 12 saniye.
+// - Ciritçi hızı azaltıldı (0.8), mermi görünümü iyileştirildi.
+// - Spawn uyarıları mevcut.
 
 (function () {
     'use strict';
@@ -21,33 +19,47 @@
 
     // Buz Botu
     const BUZ_BOT_HP = 5000;
-    const BUZ_BOT_SPEED = 1.0;
+    const BUZ_BOT_SPEED = 0.8;          // azaltıldı
     const BUZ_BOT_RADIUS = 22;
     const BUZ_BOT_TEMAS_HASAR = 600;
-    const BUZ_BOT_ITME_MESAFE = 25; // 2.5 kare (10 birim = 1 kare varsayımıyla)
+    const BUZ_BOT_ITME_MESAFE = 25;
     const BUZ_BOT_PATLAMA_YARICAP = 68;
     const BUZ_BOT_PATLAMA_HASAR = 200;
-    const BUZ_BOT_SPAWN_INTERVAL = 600;
+    const BUZ_BOT_SPAWN_INTERVAL = 720; // 12 saniye (60fps)
     const BUZ_BOT_SPAWN_WARN = 180;
     const BUZ_BOT_SALDIRI_ARALIK = 2000;
+    const BUZ_BOT_VURUS_ANIM = 10;       // vuruş animasyonu kare sayısı
 
-    // Buz Ciritçisi (ikinci bot)
+    // Buz Ciritçisi
     const CIRITCI_HP = 2500;
-    const CIRITCI_SPEED = 1.0;
+    const CIRITCI_SPEED = 0.8;          // azaltıldı
     const CIRITCI_RADIUS = 18;
     const CIRITCI_SHOOT_RANGE = 300;
     const CIRITCI_SHOOT_INTERVAL = 1500;
     const CIRITCI_DAMAGE = 400;
-    const CIRITCI_SPAWN_INTERVAL = 480; // 8 saniyede bir
-    const CIRITCI_SPAWN_WARN = 120;       // 2 saniye
+    const CIRITCI_SPAWN_INTERVAL = 480;
+    const CIRITCI_SPAWN_WARN = 120;
+
+    // Buz Bumerangı
+    const BUMERANG_HP = 1500;
+    const BUMERANG_SPEED = 2.0;
+    const BUMERANG_RADIUS = 16;
+    const BUMERANG_ALAN_YARICAP = 68;   // ninja alanının %60'ı
+    const BUMERANG_ALAN_OYUNCU_HASAR = 100; // saniyede
+    const BUMERANG_ALAN_SIPER_HASAR = 90;   // saniyede
+    const BUMERANG_SPAWN_INTERVAL = 900; // 15 saniye
+    const BUMERANG_SPAWN_WARN = 120;
 
     let buzSlimeLari = [];
     let buzBotlari = [];
     let ciritciBotlari = [];
+    let buzBumeranglari = [];
     let buzBotSpawnTimer = 0;
     let buzBotSpawnUyarilari = [];
     let ciritciSpawnTimer = 0;
     let ciritciSpawnUyarilari = [];
+    let bumerangSpawnTimer = 0;
+    let bumerangSpawnUyarilari = [];
     let sonTemasZamani = {};
 
     // ========== MOD TANIMI ==========
@@ -57,10 +69,13 @@
             buzSlimeLari = [];
             buzBotlari = [];
             ciritciBotlari = [];
+            buzBumeranglari = [];
             buzBotSpawnTimer = 0;
             buzBotSpawnUyarilari = [];
             ciritciSpawnTimer = 0;
             ciritciSpawnUyarilari = [];
+            bumerangSpawnTimer = 0;
+            bumerangSpawnUyarilari = [];
             sonTemasZamani = {};
 
             bot.isActive = false; bot.isDead = true;
@@ -78,6 +93,24 @@
             boomerangTimer = 0;
             fogBotTimer = 0;
             spawnIndicators = [];
+
+            // Siperlerin üst üste binmesini önlemek için basit kontrol (mevcut engelleri ayır)
+            for (let i = 0; i < obstacles.length; i++) {
+                for (let j = i + 1; j < obstacles.length; j++) {
+                    const a = obstacles[i], b = obstacles[j];
+                    const dist = getDist(a, b);
+                    const minDist = a.radius + b.radius + 20; // en az 20 birim boşluk
+                    if (dist < minDist && dist > 0) {
+                        const overlap = (minDist - dist) / 2;
+                        const dx = (b.x - a.x) / dist;
+                        const dy = (b.y - a.y) / dist;
+                        a.x -= dx * overlap;
+                        a.y -= dy * overlap;
+                        b.x += dx * overlap;
+                        b.y += dy * overlap;
+                    }
+                }
+            }
 
             // Normal siperlerden buz slime çıkarma
             for (let i = obstacles.length - 1; i >= 0; i--) {
@@ -147,7 +180,8 @@
                         alerted: false,
                         stage: 0,
                         oSp: BUZ_BOT_SPEED,
-                        oR: BUZ_BOT_RADIUS
+                        oR: BUZ_BOT_RADIUS,
+                        vurusAnimasyon: 0
                     };
                     buzBotlari.push(bot);
                     sonTemasZamani[bot] = 0;
@@ -166,7 +200,12 @@
                         addFloatingNumber(player.x, player.y, BUZ_BOT_PATLAMA_HASAR, "#e74c3c");
                         player.lastHitTime = Date.now();
                     }
-                    spawnParticles(b.x, b.y, '#2e86c1', 'normal');
+                    // Ölüm animasyonu: buz parçacıkları
+                    for (let k = 0; k < 12; k++) {
+                        const ang = Math.random() * Math.PI * 2;
+                        const dist = Math.random() * 30;
+                        spawnParticles(b.x + Math.cos(ang) * dist, b.y + Math.sin(ang) * dist, '#aed6f1', 'normal');
+                    }
                     triggerBotKill(b.x, b);
                 }
                 if (b.isDead) { buzBotlari.splice(i, 1); continue; }
@@ -185,16 +224,17 @@
                             player.hp -= BUZ_BOT_TEMAS_HASAR;
                             addFloatingNumber(player.x, player.y, BUZ_BOT_TEMAS_HASAR, "#e74c3c");
                             player.lastHitTime = Date.now();
-                            // Oyuncuyu doğrudan konum ile it
                             const itmeAci = getAngle(b, player);
                             player.x += Math.cos(itmeAci) * BUZ_BOT_ITME_MESAFE;
                             player.y += Math.sin(itmeAci) * BUZ_BOT_ITME_MESAFE;
-                            // Sınır kontrolü
                             player.x = clampPos(player.x, player.radius + WALL_THICKNESS, canvas.width - player.radius - WALL_THICKNESS);
                             player.y = clampPos(player.y, player.radius + WALL_THICKNESS, canvas.height - player.radius - WALL_THICKNESS);
+                            b.vurusAnimasyon = BUZ_BOT_VURUS_ANIM;
                         }
                     }
                 }
+
+                if (b.vurusAnimasyon > 0) b.vurusAnimasyon -= ts;
 
                 if (Math.abs(b.kbX) > 0.1 || Math.abs(b.kbY) > 0.1) {
                     b.x += b.kbX * ts;
@@ -263,17 +303,14 @@
                 if (canSeePlayer) {
                     c.angle = Math.atan2(player.y - c.y, player.x - c.x);
                     const d = getDist(c, player);
-                    // Orta menzilde dur, çok yaklaşma
                     if (d > CIRITCI_SHOOT_RANGE) {
                         c.x += Math.cos(c.angle) * c.speed * ts;
                         c.y += Math.sin(c.angle) * c.speed * ts;
                     } else if (d < 150) {
-                        // Çok yakınsa geri çekil
                         c.x -= Math.cos(c.angle) * c.speed * ts;
                         c.y -= Math.sin(c.angle) * c.speed * ts;
                     }
 
-                    // Mızrak atışı
                     if (d < CIRITCI_SHOOT_RANGE && Date.now() - c.lastShot > CIRITCI_SHOOT_INTERVAL) {
                         c.lastShot = Date.now();
                         botBullets.push({
@@ -298,6 +335,102 @@
                 c.x = clampPos(c.x, c.radius + WALL_THICKNESS, canvas.width - c.radius - WALL_THICKNESS);
                 c.y = clampPos(c.y, c.radius + WALL_THICKNESS, canvas.height - c.radius - WALL_THICKNESS);
                 resolveObstacleCollision(c);
+            }
+
+            // Buz Bumerangı spawn
+            bumerangSpawnTimer += ts;
+            if (bumerangSpawnTimer >= BUMERANG_SPAWN_INTERVAL && buzBumeranglari.length < 2) {
+                bumerangSpawnTimer = 0;
+                const x = Math.random() * (canvas.width - 200) + 100;
+                const y = Math.random() * (canvas.height - 200) + 100;
+                bumerangSpawnUyarilari.push({ x, y, timer: BUMERANG_SPAWN_WARN });
+            }
+
+            for (let i = bumerangSpawnUyarilari.length - 1; i >= 0; i--) {
+                const u = bumerangSpawnUyarilari[i];
+                u.timer -= ts;
+                if (u.timer <= 0) {
+                    buzBumeranglari.push({
+                        x: u.x, y: u.y,
+                        radius: BUMERANG_RADIUS,
+                        hp: BUMERANG_HP,
+                        maxHp: BUMERANG_HP,
+                        speed: BUMERANG_SPEED,
+                        angle: Math.atan2(player.y - u.y, player.x - u.x),
+                        isDead: false,
+                        isActive: true,
+                        color: '#5dade2',
+                        kbX: 0, kbY: 0,
+                        oSp: BUMERANG_SPEED,
+                        oR: BUMERANG_RADIUS,
+                        alanHasarTimer: 0
+                    });
+                    bumerangSpawnUyarilari.splice(i, 1);
+                }
+            }
+
+            // Buz Bumerangı güncelleme
+            for (let i = buzBumeranglari.length - 1; i >= 0; i--) {
+                const b = buzBumeranglari[i];
+
+                if (b.hp <= 0 && !b.isDead) {
+                    b.isDead = true;
+                    spawnParticles(b.x, b.y, '#aed6f1', 'normal');
+                    triggerBotKill(b.x, b);
+                }
+                if (b.isDead) { buzBumeranglari.splice(i, 1); continue; }
+
+                // Hedef: en yakın oyuncu veya siper
+                let hedefX, hedefY;
+                const dOyuncu = !player.isDead ? getDist(b, player) : Infinity;
+                let enYakinSiper = null;
+                let dSiper = Infinity;
+                for (const o of obstacles) {
+                    const d = getDist(b, o);
+                    if (d < dSiper) {
+                        dSiper = d;
+                        enYakinSiper = o;
+                    }
+                }
+
+                if (dOyuncu < dSiper) {
+                    hedefX = player.x;
+                    hedefY = player.y;
+                } else if (enYakinSiper) {
+                    hedefX = enYakinSiper.x;
+                    hedefY = enYakinSiper.y;
+                } else {
+                    hedefX = player.x;
+                    hedefY = player.y;
+                }
+
+                b.angle = Math.atan2(hedefY - b.y, hedefX - b.x);
+                b.x += Math.cos(b.angle) * b.speed * ts;
+                b.y += Math.sin(b.angle) * b.speed * ts;
+
+                // Alan hasarı
+                b.alanHasarTimer += ts;
+                if (b.alanHasarTimer >= 60) { // her saniye
+                    b.alanHasarTimer = 0;
+                    // Oyuncuya hasar
+                    if (!player.isDead && getDist(b, player) < BUMERANG_ALAN_YARICAP + player.radius) {
+                        player.hp -= BUMERANG_ALAN_OYUNCU_HASAR;
+                        addFloatingNumber(player.x, player.y, BUMERANG_ALAN_OYUNCU_HASAR, "#5dade2");
+                        player.lastHitTime = Date.now();
+                    }
+                    // Siperlere hasar
+                    for (const o of obstacles) {
+                        if (getDist(b, o) < BUMERANG_ALAN_YARICAP + o.radius) {
+                            o.hp -= BUMERANG_ALAN_SIPER_HASAR;
+                            addFloatingNumber(o.x, o.y, BUMERANG_ALAN_SIPER_HASAR, "#5dade2");
+                        }
+                    }
+                }
+
+                // Sınırlar
+                b.x = clampPos(b.x, b.radius + WALL_THICKNESS, canvas.width - b.radius - WALL_THICKNESS);
+                b.y = clampPos(b.y, b.radius + WALL_THICKNESS, canvas.height - b.radius - WALL_THICKNESS);
+                resolveObstacleCollision(b);
             }
 
             // Buz Slime güncelleme
@@ -334,10 +467,13 @@
             buzSlimeLari = [];
             buzBotlari = [];
             ciritciBotlari = [];
+            buzBumeranglari = [];
             buzBotSpawnTimer = 0;
             buzBotSpawnUyarilari = [];
             ciritciSpawnTimer = 0;
             ciritciSpawnUyarilari = [];
+            bumerangSpawnTimer = 0;
+            bumerangSpawnUyarilari = [];
             sonTemasZamani = {};
         }
     };
@@ -352,6 +488,7 @@
         extras = extras.concat(buzSlimeLari.filter(b => !b.isDead));
         extras = extras.concat(buzBotlari.filter(b => !b.isDead));
         extras = extras.concat(ciritciBotlari.filter(b => !b.isDead));
+        extras = extras.concat(buzBumeranglari.filter(b => !b.isDead));
         return extras;
     };
 
@@ -384,7 +521,7 @@
 
         if (!gameStarted || window.GAME_MODE !== MOD_ID) return;
 
-        // Buz Botu spawn uyarıları
+        // Spawn uyarıları
         buzBotSpawnUyarilari.forEach(u => {
             ctx.save();
             ctx.translate(u.x, u.y);
@@ -402,7 +539,6 @@
             ctx.restore();
         });
 
-        // Ciritçi spawn uyarıları
         ciritciSpawnUyarilari.forEach(u => {
             ctx.save();
             ctx.translate(u.x, u.y);
@@ -420,7 +556,24 @@
             ctx.restore();
         });
 
-        // Buz Botları (kristal)
+        bumerangSpawnUyarilari.forEach(u => {
+            ctx.save();
+            ctx.translate(u.x, u.y);
+            ctx.globalAlpha = Math.abs(Math.sin(Date.now() / 150));
+            ctx.beginPath();
+            ctx.arc(0, 0, BUMERANG_RADIUS + 12, 0, Math.PI * 2);
+            ctx.strokeStyle = '#aed6f1';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = '#aed6f1';
+            ctx.font = "bold 14px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText(Math.ceil(u.timer / 60), 0, 5);
+            ctx.restore();
+        });
+
+        // Buz Botları
         buzBotlari.forEach(b => {
             if (b.isDead) return;
             ctx.save();
@@ -430,6 +583,10 @@
             ctx.fillRect(-25, -b.radius - 15, 50, 5);
             ctx.fillStyle = '#2ecc71';
             ctx.fillRect(-25, -b.radius - 15, 50 * (b.hp / b.maxHp), 5);
+
+            // Vuruş animasyonu: hafif büyüme ve parlama
+            const animScale = b.vurusAnimasyon > 0 ? 1.15 : 1;
+            ctx.scale(animScale, animScale);
 
             ctx.rotate(b.angle);
             ctx.fillStyle = '#2e86c1';
@@ -472,7 +629,6 @@
             ctx.fillRect(-20, -c.radius - 15, 40 * (c.hp / c.maxHp), 5);
 
             ctx.rotate(c.angle);
-            // Gövde
             ctx.fillStyle = '#5dade2';
             ctx.beginPath();
             ctx.arc(0, 0, c.radius, 0, Math.PI * 2);
@@ -480,17 +636,16 @@
             ctx.strokeStyle = '#2e86c1';
             ctx.lineWidth = 2;
             ctx.stroke();
-            // Mızrak
+            // Mızrak görünümü iyileştirildi
             ctx.fillStyle = '#aed6f1';
-            ctx.fillRect(12, -2, 15, 4);
+            ctx.fillRect(12, -2, 18, 4);
             ctx.fillStyle = '#fff';
             ctx.beginPath();
-            ctx.moveTo(27, 0);
-            ctx.lineTo(22, -4);
-            ctx.lineTo(22, 4);
+            ctx.moveTo(30, 0);
+            ctx.lineTo(24, -5);
+            ctx.lineTo(24, 5);
             ctx.closePath();
             ctx.fill();
-            // Gözler
             ctx.fillStyle = '#1a5276';
             ctx.beginPath();
             ctx.arc(6, -5, 2.5, 0, Math.PI * 2);
@@ -498,6 +653,41 @@
             ctx.beginPath();
             ctx.arc(6, 5, 2.5, 0, Math.PI * 2);
             ctx.fill();
+            ctx.restore();
+        });
+
+        // Buz Bumerangları
+        buzBumeranglari.forEach(b => {
+            if (b.isDead) return;
+            ctx.save();
+            ctx.translate(b.x, b.y);
+
+            // Buz alanı (yarı saydam, kenar çizgisi yok)
+            ctx.beginPath();
+            ctx.arc(0, 0, BUMERANG_ALAN_YARICAP, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(174, 214, 241, 0.3)';
+            ctx.fill();
+
+            // Bumerang gövdesi (döner)
+            ctx.rotate(Date.now() / 100 + b.angle);
+            ctx.fillStyle = '#5dade2';
+            ctx.beginPath();
+            ctx.moveTo(15, 0);
+            ctx.lineTo(-5, 10);
+            ctx.lineTo(-3, 0);
+            ctx.lineTo(-5, -10);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = '#2e86c1';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Can barı
+            ctx.rotate(-(Date.now() / 100 + b.angle)); // geri döndür
+            ctx.fillStyle = '#e74c3c';
+            ctx.fillRect(-20, -b.radius - 12, 40, 4);
+            ctx.fillStyle = '#2ecc71';
+            ctx.fillRect(-20, -b.radius - 12, 40 * (b.hp / b.maxHp), 4);
             ctx.restore();
         });
 
@@ -529,14 +719,14 @@
         });
     };
 
-    // ========== MOD SEÇİM KARTI + KAYDIRMA DÜZELTME ==========
+    // ========== MOD SEÇİM KARTI + OK BUTONLARI ==========
     const track = document.getElementById('difficulty-track');
     if (track) {
         track.style.touchAction = 'pan-y';
         track.style.webkitOverflowScrolling = 'touch';
         track.style.overflowY = 'scroll';
         track.style.maxHeight = '70vh';
-        track.style.scrollSnapType = 'none'; // scroll-snap'i kapat, serbest kaydırma
+        track.style.scrollSnapType = 'none';
     }
 
     if (track && !document.getElementById('diff-buzul')) {
@@ -549,7 +739,7 @@
         card.style.padding = '15px 10px';
         card.innerHTML =
             '<span>Buzul Çağı</span>' +
-            '<small>Normal siperler buz keser<br>Buz Botu + Buz Slime + Ciritçi</small>';
+            '<small>Normal siperler buz keser<br>Buz Botu + Ciritçi + Bumerang</small>';
         track.appendChild(card);
 
         card.addEventListener('click', () => {
@@ -562,6 +752,78 @@
             card.classList.add('selected');
             window.GAME_MODE = MOD_ID;
         }, { passive: true });
+    }
+
+    // Ok butonları
+    const difficultyScreen = document.getElementById('difficulty-screen');
+    if (difficultyScreen && !document.getElementById('mod-up-btn')) {
+        const upBtn = document.createElement('button');
+        upBtn.id = 'mod-up-btn';
+        upBtn.textContent = '▲';
+        upBtn.style.cssText = `
+            position: absolute;
+            right: 8px;
+            top: 20%;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            color: #fff;
+            border: 2px solid rgba(255,255,255,0.5);
+            font-size: 20px;
+            cursor: pointer;
+            z-index: 70;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+            touch-action: manipulation;
+        `;
+
+        const downBtn = document.createElement('button');
+        downBtn.id = 'mod-down-btn';
+        downBtn.textContent = '▼';
+        downBtn.style.cssText = upBtn.style.cssText;
+        downBtn.style.top = 'auto';
+        downBtn.style.bottom = '20%';
+
+        function getSelectedIndex() {
+            const cards = document.querySelectorAll('.diff-card');
+            for (let i = 0; i < cards.length; i++) {
+                if (cards[i].classList.contains('selected')) return i;
+            }
+            return 0;
+        }
+
+        function selectCardByIndex(index) {
+            const cards = document.querySelectorAll('.diff-card');
+            if (cards.length === 0) return;
+            if (index < 0) index = 0;
+            if (index >= cards.length) index = cards.length - 1;
+            cards.forEach(c => c.classList.remove('selected'));
+            cards[index].classList.add('selected');
+            cards[index].scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+            const cardId = cards[index].id;
+            if (cardId === 'diff-normal') window.GAME_MODE = 'arena';
+            else if (cardId === 'diff-easy') { /* kolay klasik */ }
+            else if (cardId === 'diff-buzul') window.GAME_MODE = 'buzul';
+        }
+
+        function moveSelection(direction) {
+            const current = getSelectedIndex();
+            const newIndex = direction === 'up' ? current - 1 : current + 1;
+            selectCardByIndex(newIndex);
+        }
+
+        upBtn.addEventListener('click', (e) => { e.preventDefault(); moveSelection('up'); });
+        downBtn.addEventListener('click', (e) => { e.preventDefault(); moveSelection('down'); });
+        upBtn.addEventListener('touchstart', (e) => { e.preventDefault(); moveSelection('up'); }, { passive: false });
+        downBtn.addEventListener('touchstart', (e) => { e.preventDefault(); moveSelection('down'); }, { passive: false });
+
+        difficultyScreen.appendChild(upBtn);
+        difficultyScreen.appendChild(downBtn);
     }
 
 })();
