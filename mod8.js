@@ -1,9 +1,9 @@
-// ========== mod7.js (BUZUL ÇAĞI) - HEYKEL GÜÇLENDİRİLDİ, GÖRSELLER İYİLEŞTİRİLDİ ==========
-// - Heykel hasarı: 20 (çok hızlı vuruşlarla sürekli baskı)
-// - Heykel saldırı aralığı: 100ms (20 kat daha hızlı)
-// - Heykel canı: 10800 (8000 + 2800)
-// - Heykel vuruşta oyuncuyu sürükler (itme 25)
-// - Heykel Tıraşı ve Heykel görselleri iyileştirildi
+// ========== mod7.js (BUZUL ÇAĞI) - HEYKEL GÜÇLENDİRİLDİ, CAN KAYBI KALDIRILDI ==========
+// - Heykel saldırı başına can kaybetmez.
+// - Heykel canı: 11100 (10800 + 300).
+// - Heykel yok olunca 4 Buz Slime çıkar.
+// - Heykel menzili: 50, hasarı: 220, yapım süresi: 5 saniye.
+// - Heykel Tıraşı canı: 1300, menzili: 160, hasarı: 300.
 
 (function () {
     'use strict';
@@ -41,24 +41,24 @@
     const CIRITCI_MERMI_HIZ = BOT_BULLET_SPEED * 0.87;
 
     // Heykel Tıraşı
-    const HEYKEL_TIRASI_HP = 1000;
+    const HEYKEL_TIRASI_HP = 1300;          // 1000 + 300
     const HEYKEL_TIRASI_SPEED = 0.5;
     const HEYKEL_TIRASI_RADIUS = 18;
-    const HEYKEL_TIRASI_MENZIL = 143;
-    const HEYKEL_TIRASI_HASAR = 100;
+    const HEYKEL_TIRASI_MENZIL = 160;       // arttırıldı
+    const HEYKEL_TIRASI_HASAR = 300;        // 100 + 200
     const HEYKEL_TIRASI_SPAWN_INTERVAL = 1200;
     const HEYKEL_TIRASI_SPAWN_WARN = 180;
-    const HEYKEL_INSAA_SURESI = 360;
+    const HEYKEL_INSAA_SURESI = 300;        // 5 saniye (6 - 1)
 
     // Heykel
-    const HEYKEL_HP = 10800;              // 8000 + 2800
+    const HEYKEL_HP = 11100;                // 10800 + 300
     const HEYKEL_SPEED = 0.6;
     const HEYKEL_RADIUS = 30;
-    const HEYKEL_SALDIRI_HASAR = 20;      // düşük hasar, hızlı vuruş
+    const HEYKEL_SALDIRI_HASAR = 220;       // 20 + 200
     const HEYKEL_ITME_MESAFE = 25;
-    const HEYKEL_SALDIRI_MENZIL = 35;
-    const HEYKEL_SALDIRI_ARALIK = 100;    // 100ms = 20 kat daha hızlı
-    const HEYKEL_SALDIRI_CAN_KAYBI = 500;
+    const HEYKEL_SALDIRI_MENZIL = 50;       // arttırıldı
+    const HEYKEL_SALDIRI_ARALIK = 100;
+    // Heykel saldırı can kaybı kaldırıldı (HEYKEL_SALDIRI_CAN_KAYBI yok)
     const HEYKEL_PASIF_CAN_KAYBI = 300;
     const HEYKEL_PASIF_KAYIP_ARALIK = 180;
     const HEYKEL_IYILESTIRME = 100;
@@ -329,6 +329,21 @@
                 if (hey.hp <= 0 && !hey.isDead) {
                     hey.isDead = true;
                     spawnParticles(hey.x, hey.y, '#85c1e9', 'smoke');
+                    // Heykel yok olunca 4 Buz Slime çıkar
+                    for (let k = 0; k < 4; k++) {
+                        const offsetX = (Math.random() - 0.5) * 50;
+                        const offsetY = (Math.random() - 0.5) * 50;
+                        buzSlimeLari.push({
+                            x: hey.x + offsetX, y: hey.y + offsetY,
+                            radius: SLIME_RADIUS,
+                            hp: SLIME_HP, maxHp: SLIME_HP,
+                            speed: SLIME_SPEED, baseSpeed: SLIME_SPEED,
+                            angle: Math.random() * Math.PI * 2,
+                            isDead: false, isActive: true,
+                            color: '#aed6f1', kbX: 0, kbY: 0,
+                            oSp: SLIME_SPEED, oR: SLIME_RADIUS
+                        });
+                    }
                     triggerBotKill(hey.x, hey);
                 }
                 if (hey.isDead) { heykeller.splice(i, 1); continue; }
@@ -349,7 +364,7 @@
                         hey.y += Math.sin(hey.angle) * hey.speed * ts;
                     }
 
-                    // Saldırı: 100ms aralıklarla, 20 hasar
+                    // Saldırı: 100ms aralıklarla, 220 hasar, can kaybı yok
                     if (d < HEYKEL_SALDIRI_MENZIL + hey.radius + player.radius) {
                         if (Date.now() - hey.lastShot > HEYKEL_SALDIRI_ARALIK) {
                             hey.lastShot = Date.now();
@@ -361,8 +376,7 @@
                             player.y += Math.sin(itmeAci) * HEYKEL_ITME_MESAFE;
                             player.x = clampPos(player.x, player.radius + WALL_THICKNESS, canvas.width - player.radius - WALL_THICKNESS);
                             player.y = clampPos(player.y, player.radius + WALL_THICKNESS, canvas.height - player.radius - WALL_THICKNESS);
-                            hey.hp -= HEYKEL_SALDIRI_CAN_KAYBI;
-                            addFloatingNumber(hey.x, hey.y, HEYKEL_SALDIRI_CAN_KAYBI, "#e74c3c");
+                            // Saldırı başına can kaybı kaldırıldı
                         }
                     }
                 }
@@ -766,11 +780,9 @@
             ctx.save();
             ctx.translate(h.x, h.y);
 
-            // Yürüme animasyonu
             const yurumeOffset = Math.sin(Date.now() / 150) * 2;
             ctx.translate(0, yurumeOffset);
 
-            // Gölge
             ctx.fillStyle = 'rgba(0,0,0,0.3)';
             ctx.beginPath();
             ctx.ellipse(0, h.radius * 0.6, h.radius * 0.8, h.radius * 0.3, 0, 0, Math.PI * 2);
@@ -782,7 +794,6 @@
             ctx.fillRect(-18, -h.radius - 15, 36 * (h.hp / h.maxHp), 5);
 
             ctx.rotate(h.angle);
-            // Gövde
             ctx.fillStyle = '#8e44ad';
             ctx.beginPath();
             ctx.arc(0, 0, h.radius, 0, Math.PI * 2);
@@ -791,13 +802,11 @@
             ctx.lineWidth = 2;
             ctx.stroke();
 
-            // Çekiç (buzdan)
             ctx.fillStyle = '#aed6f1';
             ctx.fillRect(10, -2, 8, 3);
             ctx.fillStyle = '#85c1e9';
             ctx.fillRect(18, -4, 4, 8);
 
-            // Gözler (parlak)
             ctx.fillStyle = '#fff';
             ctx.shadowColor = '#fff';
             ctx.shadowBlur = 3;
@@ -810,12 +819,10 @@
             ctx.shadowBlur = 0;
             ctx.restore();
 
-            // İnşa göstergesi
             if (h.insaatSure > 0) {
                 ctx.save();
                 ctx.translate(h.x, h.y);
                 ctx.globalAlpha = 0.7;
-                // İnşa çubuğu
                 const ilerleme = 1 - (h.insaatSure / HEYKEL_INSAA_SURESI);
                 ctx.fillStyle = 'rgba(0,0,0,0.5)';
                 ctx.fillRect(-20, -h.radius - 30, 40, 6);
@@ -831,11 +838,9 @@
             ctx.save();
             ctx.translate(hey.x, hey.y);
 
-            // Yürüme animasyonu
             const yurumeOffset = Math.sin(Date.now() / 200) * 3;
             ctx.translate(0, yurumeOffset);
 
-            // Gölge
             ctx.fillStyle = 'rgba(0,0,0,0.3)';
             ctx.beginPath();
             ctx.ellipse(0, hey.radius * 0.7, hey.radius * 0.9, hey.radius * 0.35, 0, 0, Math.PI * 2);
@@ -847,7 +852,6 @@
             ctx.fillRect(-30, -hey.radius - 15, 60 * (hey.hp / hey.maxHp), 5);
 
             ctx.rotate(hey.angle);
-            // Büyük buz golem gövdesi
             ctx.fillStyle = '#85c1e9';
             ctx.beginPath();
             ctx.moveTo(hey.radius, 0);
@@ -861,13 +865,11 @@
             ctx.lineWidth = 4;
             ctx.stroke();
 
-            // İç parlama
             ctx.fillStyle = 'rgba(255,255,255,0.2)';
             ctx.beginPath();
             ctx.arc(0, 0, hey.radius * 0.4, 0, Math.PI * 2);
             ctx.fill();
 
-            // Çatlaklar (can azaldıkça artar)
             const hasarOrani = 1 - (hey.hp / hey.maxHp);
             if (hasarOrani > 0.3) {
                 ctx.strokeStyle = `rgba(255,255,255,${Math.min(0.8, hasarOrani)})`;
@@ -885,7 +887,6 @@
                 ctx.stroke();
             }
 
-            // Gözler (parlak, tehditkar)
             ctx.fillStyle = '#fff';
             ctx.shadowColor = '#fff';
             ctx.shadowBlur = 5;
@@ -897,7 +898,6 @@
             ctx.fill();
             ctx.shadowBlur = 0;
 
-            // Göz bebekleri
             ctx.fillStyle = '#1a5276';
             ctx.beginPath();
             ctx.arc(11, -6, 2, 0, Math.PI * 2);
