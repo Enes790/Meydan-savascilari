@@ -32,15 +32,10 @@
     const LEAF_HIT_PAD = 8;
     const OBSTACLE_DAMAGE = 30; // 150 -> 30
 
-    // İlk aksesuar (Q): Yaprak Sıçrayışı - ninja tarzı zıplama
-    const JUMP_DAMAGE = 100;
-    const JUMP_KNOCKBACK = 0; // "düşmanı itmez"
-    const JUMP_DURATION = 40;
-    const JUMP_COOLDOWN_FRAMES = 900; // [VARSAYIM] 15 saniye, diğer yeteneklerle tutarlı
-
-    // İkinci aksesuar (E): Takip Eden Alan buff'ı
-    const FOLLOW_BUFF_DURATION = 900;  // 15 saniye - bu süre içinde ulti atılırsa alan takip eder
-    const FOLLOW_GADGET2_COOLDOWN = 1200; // [VARSAYIM] 20 saniye
+    const RAIN_COUNT = 6;
+    const RAIN_SPREAD = Math.PI / 3;
+    const RAIN_DAMAGE = 400;
+    const RAIN_COOLDOWN_FRAMES = 900;
 
     const ULTI_ZONE_RADIUS = 114 * 0.84; // %16 küçültüldü (~96)
     const ULTI_ZONE_DURATION = 480; // 8 saniye (önceki 4sn'den uzatıldı)
@@ -108,65 +103,26 @@
     const originalActivateGadget = Player.prototype.activateGadget;
     Player.prototype.activateGadget = function (a, pull) {
         if (this.charType !== CHAR_ID) return originalActivateGadget.call(this, a, pull);
-        if (!this.gadgetReady || this.isDead || this.isJumping) return;
+        if (!this.gadgetReady || this.isDead) return;
 
-        // Ninja'nın "sıçrayış" formülüyle aynı mesafe hesaplaması, ama
-        // farklı sonuç: itme yok, hasar düşük, iniş anında cephane dolar.
-        let pullMag = pull !== undefined ? Math.max(0, Math.min(1, pull)) : 1;
-        const maxDist = RANGE * 0.65;
-        const dist = Math.max(60, maxDist * pullMag);
         const angle = a !== undefined ? a : this.angle;
-        const tx = clampPos(this.x + Math.cos(angle) * dist, WALL_THICKNESS + this.radius + 5, canvas.width - WALL_THICKNESS - this.radius - 5);
-        const ty = clampPos(this.y + Math.sin(angle) * dist, WALL_THICKNESS + this.radius + 5, canvas.height - WALL_THICKNESS - this.radius - 5);
-
-        this.isJumping = true; this.jumpInvulnerable = true;
-        this.jumpStartX = this.x; this.jumpStartY = this.y;
-        this.jumpTargetX = tx; this.jumpTargetY = ty;
-        this.jumpProgress = 0; this.jumpDuration = JUMP_DURATION;
-        this.jumpDamage = JUMP_DAMAGE; this.jumpKnockback = JUMP_KNOCKBACK; this.jumpLabel = "YAPRAK SIÇRAYIŞI!";
-        spawnParticles(this.x, this.y, '#229954', 'smoke');
-
+        for (let i = 0; i < RAIN_COUNT; i++) {
+            const off = -RAIN_SPREAD / 2 + (RAIN_SPREAD / (RAIN_COUNT - 1)) * i;
+            spawnLeaf(this.x, this.y, angle + off, RAIN_DAMAGE);
+        }
+        addFloatingNumber(this.x, this.y - 30, "YAPRAK YAĞMURU!", "#229954");
         this.gadgetReady = false;
-        this.gadgetCooldown = JUMP_COOLDOWN_FRAMES;
+        this.gadgetCooldown = RAIN_COOLDOWN_FRAMES;
         if (gadgetBtn) gadgetBtn.classList.add('cooldown');
     };
-
-    // ------------------------------------------------------------------
-    // İkinci aksesuar (E): 15 saniyelik buff - bu süre içinde ulti atılırsa
-    // o ulti'nin alanı sabit kalmaz, oyuncuyu takip eder.
-    // ------------------------------------------------------------------
-    const originalActivateGadget2 = Player.prototype.activateGadget2;
-    Player.prototype.activateGadget2 = function (a, pull) {
-        if (this.charType !== CHAR_ID) return originalActivateGadget2.call(this, a, pull);
-        if (!this.gadget2Ready || this.isDead) return;
-
-        this.kFollowUltiBuff = true;
-        this.kFollowUltiBuffTimer = FOLLOW_BUFF_DURATION;
-        addFloatingNumber(this.x, this.y - 30, "TAKİP EDEN ALAN HAZIR!", "#229954");
-
-        this.gadget2Ready = false;
-        this.gadget2Cooldown = FOLLOW_GADGET2_COOLDOWN;
-        if (gadgetBtn2) gadgetBtn2.classList.add('cooldown');
-    };
-
-    // Zıplama tamamlanınca (main dosyanın kendi jump-landing sistemi
-    // isJumping'i false yapınca) cephaneyi dolduruyoruz - bunu kendi
-    // döngümüzde "iniş anını" tespit ederek yapıyoruz (bkz. leafUpdate).
-    let wasJumping = false;
 
     const originalFireUlti = Player.prototype.fireUlti;
     Player.prototype.fireUlti = function (a, pullOverride) {
         if (this.charType !== CHAR_ID) return originalFireUlti.call(this, a, pullOverride);
         if (!this.ultReady || this.isDead) return;
 
-        const willFollow = !!this.kFollowUltiBuff;
-        leafZones.push({
-            x: this.x, y: this.y, radius: ULTI_ZONE_RADIUS, life: ULTI_ZONE_DURATION,
-            maxLife: ULTI_ZONE_DURATION, tickTimer: 0, followsPlayer: willFollow
-        });
-        addFloatingNumber(this.x, this.y - 40, willFollow ? "TAKİP EDEN ALAN!" : "YAPRAK ALANI!", "#229954");
-
-        if (willFollow) { this.kFollowUltiBuff = false; this.kFollowUltiBuffTimer = 0; }
+        leafZones.push({ x: this.x, y: this.y, radius: ULTI_ZONE_RADIUS, life: ULTI_ZONE_DURATION, maxLife: ULTI_ZONE_DURATION, tickTimer: 0 });
+        addFloatingNumber(this.x, this.y - 40, "YAPRAK ALANI!", "#229954");
 
         this.ultReady = false; this.ultCharge = 0;
         if (ultFill) ultFill.style.width = "0%";
@@ -194,7 +150,7 @@
         card.innerHTML =
             '<div class="char-color-preview" style="background:' + CHAR_COLOR + ';"></div>' +
             '<span>Yaprakçı</span>' +
-            '<small>Hasar: 500+400x2<br>Güç: Sıçrayış+Alan</small>';
+            '<small>Hasar: 500+400x2<br>Güç: Yaprak Alanı</small>';
         charContainer.appendChild(card);
         card.addEventListener('click', () => {
             selectedCharacter = CHAR_ID;
@@ -343,47 +299,19 @@
         if (!gameStarted) return;
         if (player.charType === CHAR_ID) {
             if (gadgetBtn && gadgetBtn.style.display !== 'flex') gadgetBtn.style.display = 'flex';
-            if (gadgetBtn2 && gadgetBtn2.style.display !== 'flex') gadgetBtn2.style.display = 'flex';
             if (ultiBtn && ultiBtn.style.display !== 'flex') ultiBtn.style.display = 'flex';
             if (gadgetBtn && gadgetBtn.dataset.yaprakLabelSet !== '1') {
-                gadgetBtn.innerHTML = 'YAPRAK<br>SIÇRAYIŞ<br><span id="gadget-timer"></span>';
+                gadgetBtn.innerHTML = 'YAPRAK<br>YAĞMURU<br><span id="gadget-timer"></span>';
                 gadgetBtn.dataset.yaprakLabelSet = '1';
             }
-            if (gadgetBtn2 && gadgetBtn2.dataset.yaprakLabelSet !== '1') {
-                gadgetBtn2.innerHTML = 'TAKİP<br>EDEN ALAN<br><span id="gadget-timer-2"></span>';
-                gadgetBtn2.dataset.yaprakLabelSet = '1';
-            }
-        } else {
-            if (gadgetBtn && gadgetBtn.dataset.yaprakLabelSet === '1') gadgetBtn.dataset.yaprakLabelSet = '0';
-            if (gadgetBtn2 && gadgetBtn2.dataset.yaprakLabelSet === '1') gadgetBtn2.dataset.yaprakLabelSet = '0';
-        }
-
-        // Zıplama inişini tespit et (main dosyanın kendi jump sistemi
-        // isJumping'i true'dan false'a çevirince) ve cephaneyi doldur.
-        if (player.charType === CHAR_ID) {
-            if (wasJumping && !player.isJumping) {
-                player.ammo = player.maxAmmo;
-                addFloatingNumber(player.x, player.y, "CEPHANE DOLDU!", "#f1c40f");
-            }
-            wasJumping = player.isJumping;
-        } else {
-            wasJumping = false;
-        }
-
-        // 15 saniyelik "takip eden alan" buff süresi dolarsa sessizce iptal olsun
-        if (player.charType === CHAR_ID && player.kFollowUltiBuff) {
-            player.kFollowUltiBuffTimer -= 1; // ~1 kare/saniyeye yakın, hassasiyet kritik değil
-            if (player.kFollowUltiBuffTimer <= 0) {
-                player.kFollowUltiBuff = false;
-                addFloatingNumber(player.x, player.y, "ALAN TAKİBİ SÖNDÜ", "#7f8c8d");
-            }
+        } else if (gadgetBtn && gadgetBtn.dataset.yaprakLabelSet === '1') {
+            gadgetBtn.dataset.yaprakLabelSet = '0';
         }
     }
 
     function leafUpdate(ts) {
         for (let i = leafZones.length - 1; i >= 0; i--) {
             const z = leafZones[i];
-            if (z.followsPlayer) { z.x = player.x; z.y = player.y; }
             z.life -= ts;
             z.tickTimer = (z.tickTimer || 0) + ts;
             const doTick = z.tickTimer >= 60;
