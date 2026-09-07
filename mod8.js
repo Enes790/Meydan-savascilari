@@ -1714,5 +1714,40 @@
         difficultyScreen.appendChild(upBtn);
         difficultyScreen.appendChild(downBtn);
     }
+// ========== BUZUL MODUNDAN ÇIKIŞ TEMİZLİĞİ (mod7.js İÇİNE) ==========
+// Orijinal startGame'i sakla
+const orijinalStartGame = window.startGame;
 
+// Temizlik fonksiyonu
+function buzulBotlariTemizle() {
+    buzSlimeLari = [];
+    ortaBuzSlimeLari = [];
+    buyukBuzSlimeLari = [];
+    buzBotlari = [];
+    ciritciBotlari = [];
+    heykelTirasiBotlari = [];
+    heykeller = [];
+    buzBogalari = [];
+    buzBotSpawnTimer = 0;
+    buzBotSpawnUyarilari = [];
+    ciritciRespawnTimer = -1;
+    ciritciSpawnUyarilari = [];
+    heykelTirasiSpawnTimer = 0;
+    heykelTirasiSpawnUyarilari = [];
+    bogaSpawnTimer = 0;
+    bogaSpawnUyarilari = [];
+    sonTemasZamani = {};
+}
+
+// window.startGame'i sarmala
+window.startGame = function() {
+    // Önce buzul botlarını temizle
+    buzulBotlariTemizle();
+
+    // Sonra orijinal startGame'i çağır
+    if (orijinalStartGame) {
+        orijinalStartGame();
+    }
+};
+// ========== TEMİZLİK SONU ==========
 })();
