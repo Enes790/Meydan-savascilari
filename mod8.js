@@ -79,17 +79,17 @@
     const HEYKEL_IYILESTIRME = 100;
 
     // Buz Boğası
-    const BOGA_HP = 6000;
-    const BOGA_NORMAL_HIZ = 0.5;
-    const BOGA_KOSMA_HIZ = 8.8;
-    const BOGA_BEKLEME_SURE = 120;
+    const BOGA_HP = 9000;
+    const BOGA_NORMAL_HIZ = 1.5;
+    const BOGA_KOSMA_HIZ = 9.8;
+    const BOGA_BEKLEME_SURE = 60;
     const BOGA_SARJ_SURE = 90;
     const BOGA_OFKE_SURE = 90;
-    const BOGA_TEMAS_HASAR = 400;
-    const BOGA_ITME_MESAFE = 75;
-    const BOGA_SERSEMLE_SURE = 150;
+    const BOGA_TEMAS_HASAR = 500;
+    const BOGA_ITME_MESAFE = 95;
+    const BOGA_SERSEMLE_SURE = 120;
     const BOGA_SPAWN_INTERVAL = 1900;
-    const BOGA_SPAWN_WARN = 360;
+    const BOGA_SPAWN_WARN = 390;
 
     let buzSlimeLari = [];
     let ortaBuzSlimeLari = [];
