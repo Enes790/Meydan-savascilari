@@ -32,16 +32,23 @@
     const LEAF_HIT_PAD = 8;
     const OBSTACLE_DAMAGE = 30; // 150 -> 30
 
-    const RAIN_COUNT = 6;
-    const RAIN_SPREAD = Math.PI / 3;
-    const RAIN_DAMAGE = 400;
-    const RAIN_COOLDOWN_FRAMES = 900;
+    // İlk aksesuar (Q): Yaprak Sıçrayışı - ninja tarzı zıplama
+    const JUMP_DAMAGE = 100;
+    const JUMP_KNOCKBACK = 0; // "düşmanı itmez"
+    const JUMP_DURATION = 40;
+    const JUMP_COOLDOWN_FRAMES = 900; // [VARSAYIM] 15 saniye, diğer yeteneklerle tutarlı
 
-    const ULTI_ZONE_RADIUS = 114;
-    const ULTI_ZONE_DURATION = 240; // 4 saniye (6sn'den kısaltıldı)
+    // İkinci aksesuar (E): Takip Eden Alan buff'ı
+    const FOLLOW_BUFF_DURATION = 900;  // 15 saniye - bu süre içinde ulti atılırsa alan takip eder
+    const FOLLOW_GADGET2_COOLDOWN = 1200; // [VARSAYIM] 20 saniye
+
+    const ULTI_ZONE_RADIUS = 114 * 0.84; // %16 küçültüldü (~96)
+    const ULTI_ZONE_DURATION = 480; // 8 saniye (önceki 4sn'den uzatıldı)
     const ULTI_ZONE_DPS = 150;
     const ULTI_SLOW_FACTOR = 0.4;
     const ULTI_BONUS_DAMAGE = 300;
+    const ULTI_HIT_HEAL = 50;               // alan içindeyken her isabetli vuruş +50 can
+    const ULTI_STANDING_HEAL_PER_SEC = 200; // alanda durunca saniyede +200 can
 
     const SPAWN_GROW_FRAMES = 10; // mermi doğarken küçükten büyüğe büyüme süresi
 
@@ -68,7 +75,7 @@
         leafBullets.push({
             x, y, sx: x, sy: y,
             vx: Math.cos(angle) * LEAF_BULLET_SPEED, vy: Math.sin(angle) * LEAF_BULLET_SPEED,
-            angle, dmg, age: 0
+            angle, dmg, age: 0, hitTargets: []
         });
     }
 
@@ -101,26 +108,65 @@
     const originalActivateGadget = Player.prototype.activateGadget;
     Player.prototype.activateGadget = function (a, pull) {
         if (this.charType !== CHAR_ID) return originalActivateGadget.call(this, a, pull);
-        if (!this.gadgetReady || this.isDead) return;
+        if (!this.gadgetReady || this.isDead || this.isJumping) return;
 
+        // Ninja'nın "sıçrayış" formülüyle aynı mesafe hesaplaması, ama
+        // farklı sonuç: itme yok, hasar düşük, iniş anında cephane dolar.
+        let pullMag = pull !== undefined ? Math.max(0, Math.min(1, pull)) : 1;
+        const maxDist = RANGE * 0.65;
+        const dist = Math.max(60, maxDist * pullMag);
         const angle = a !== undefined ? a : this.angle;
-        for (let i = 0; i < RAIN_COUNT; i++) {
-            const off = -RAIN_SPREAD / 2 + (RAIN_SPREAD / (RAIN_COUNT - 1)) * i;
-            spawnLeaf(this.x, this.y, angle + off, RAIN_DAMAGE);
-        }
-        addFloatingNumber(this.x, this.y - 30, "YAPRAK YAĞMURU!", "#229954");
+        const tx = clampPos(this.x + Math.cos(angle) * dist, WALL_THICKNESS + this.radius + 5, canvas.width - WALL_THICKNESS - this.radius - 5);
+        const ty = clampPos(this.y + Math.sin(angle) * dist, WALL_THICKNESS + this.radius + 5, canvas.height - WALL_THICKNESS - this.radius - 5);
+
+        this.isJumping = true; this.jumpInvulnerable = true;
+        this.jumpStartX = this.x; this.jumpStartY = this.y;
+        this.jumpTargetX = tx; this.jumpTargetY = ty;
+        this.jumpProgress = 0; this.jumpDuration = JUMP_DURATION;
+        this.jumpDamage = JUMP_DAMAGE; this.jumpKnockback = JUMP_KNOCKBACK; this.jumpLabel = "YAPRAK SIÇRAYIŞI!";
+        spawnParticles(this.x, this.y, '#229954', 'smoke');
+
         this.gadgetReady = false;
-        this.gadgetCooldown = RAIN_COOLDOWN_FRAMES;
+        this.gadgetCooldown = JUMP_COOLDOWN_FRAMES;
         if (gadgetBtn) gadgetBtn.classList.add('cooldown');
     };
+
+    // ------------------------------------------------------------------
+    // İkinci aksesuar (E): 15 saniyelik buff - bu süre içinde ulti atılırsa
+    // o ulti'nin alanı sabit kalmaz, oyuncuyu takip eder.
+    // ------------------------------------------------------------------
+    const originalActivateGadget2 = Player.prototype.activateGadget2;
+    Player.prototype.activateGadget2 = function (a, pull) {
+        if (this.charType !== CHAR_ID) return originalActivateGadget2.call(this, a, pull);
+        if (!this.gadget2Ready || this.isDead) return;
+
+        this.kFollowUltiBuff = true;
+        this.kFollowUltiBuffTimer = FOLLOW_BUFF_DURATION;
+        addFloatingNumber(this.x, this.y - 30, "TAKİP EDEN ALAN HAZIR!", "#229954");
+
+        this.gadget2Ready = false;
+        this.gadget2Cooldown = FOLLOW_GADGET2_COOLDOWN;
+        if (gadgetBtn2) gadgetBtn2.classList.add('cooldown');
+    };
+
+    // Zıplama tamamlanınca (main dosyanın kendi jump-landing sistemi
+    // isJumping'i false yapınca) cephaneyi dolduruyoruz - bunu kendi
+    // döngümüzde "iniş anını" tespit ederek yapıyoruz (bkz. leafUpdate).
+    let wasJumping = false;
 
     const originalFireUlti = Player.prototype.fireUlti;
     Player.prototype.fireUlti = function (a, pullOverride) {
         if (this.charType !== CHAR_ID) return originalFireUlti.call(this, a, pullOverride);
         if (!this.ultReady || this.isDead) return;
 
-        leafZones.push({ x: this.x, y: this.y, radius: ULTI_ZONE_RADIUS, life: ULTI_ZONE_DURATION, maxLife: ULTI_ZONE_DURATION, tickTimer: 0 });
-        addFloatingNumber(this.x, this.y - 40, "YAPRAK ALANI!", "#229954");
+        const willFollow = !!this.kFollowUltiBuff;
+        leafZones.push({
+            x: this.x, y: this.y, radius: ULTI_ZONE_RADIUS, life: ULTI_ZONE_DURATION,
+            maxLife: ULTI_ZONE_DURATION, tickTimer: 0, followsPlayer: willFollow
+        });
+        addFloatingNumber(this.x, this.y - 40, willFollow ? "TAKİP EDEN ALAN!" : "YAPRAK ALANI!", "#229954");
+
+        if (willFollow) { this.kFollowUltiBuff = false; this.kFollowUltiBuffTimer = 0; }
 
         this.ultReady = false; this.ultCharge = 0;
         if (ultFill) ultFill.style.width = "0%";
@@ -131,7 +177,7 @@
     window.chargeUlti = function (amount) {
         if (player.charType !== CHAR_ID) return originalChargeUlti(amount);
         if (!gameStarted || player.ultReady) return;
-        player.ultCharge = Math.min(100, player.ultCharge + amount);
+        player.ultCharge = Math.min(100, player.ultCharge + amount / 2); // iki kat daha zor dolsun
         if (player.ultCharge === 100) {
             player.ultReady = true;
             if (ultiBtn) ultiBtn.classList.add('ready');
@@ -148,7 +194,7 @@
         card.innerHTML =
             '<div class="char-color-preview" style="background:' + CHAR_COLOR + ';"></div>' +
             '<span>Yaprakçı</span>' +
-            '<small>Hasar: 500+400x2<br>Güç: Yaprak Alanı</small>';
+            '<small>Hasar: 500+400x2<br>Güç: Sıçrayış+Alan</small>';
         charContainer.appendChild(card);
         card.addEventListener('click', () => {
             selectedCharacter = CHAR_ID;
@@ -297,19 +343,47 @@
         if (!gameStarted) return;
         if (player.charType === CHAR_ID) {
             if (gadgetBtn && gadgetBtn.style.display !== 'flex') gadgetBtn.style.display = 'flex';
+            if (gadgetBtn2 && gadgetBtn2.style.display !== 'flex') gadgetBtn2.style.display = 'flex';
             if (ultiBtn && ultiBtn.style.display !== 'flex') ultiBtn.style.display = 'flex';
             if (gadgetBtn && gadgetBtn.dataset.yaprakLabelSet !== '1') {
-                gadgetBtn.innerHTML = 'YAPRAK<br>YAĞMURU<br><span id="gadget-timer"></span>';
+                gadgetBtn.innerHTML = 'YAPRAK<br>SIÇRAYIŞ<br><span id="gadget-timer"></span>';
                 gadgetBtn.dataset.yaprakLabelSet = '1';
             }
-        } else if (gadgetBtn && gadgetBtn.dataset.yaprakLabelSet === '1') {
-            gadgetBtn.dataset.yaprakLabelSet = '0';
+            if (gadgetBtn2 && gadgetBtn2.dataset.yaprakLabelSet !== '1') {
+                gadgetBtn2.innerHTML = 'TAKİP<br>EDEN ALAN<br><span id="gadget-timer-2"></span>';
+                gadgetBtn2.dataset.yaprakLabelSet = '1';
+            }
+        } else {
+            if (gadgetBtn && gadgetBtn.dataset.yaprakLabelSet === '1') gadgetBtn.dataset.yaprakLabelSet = '0';
+            if (gadgetBtn2 && gadgetBtn2.dataset.yaprakLabelSet === '1') gadgetBtn2.dataset.yaprakLabelSet = '0';
+        }
+
+        // Zıplama inişini tespit et (main dosyanın kendi jump sistemi
+        // isJumping'i true'dan false'a çevirince) ve cephaneyi doldur.
+        if (player.charType === CHAR_ID) {
+            if (wasJumping && !player.isJumping) {
+                player.ammo = player.maxAmmo;
+                addFloatingNumber(player.x, player.y, "CEPHANE DOLDU!", "#f1c40f");
+            }
+            wasJumping = player.isJumping;
+        } else {
+            wasJumping = false;
+        }
+
+        // 15 saniyelik "takip eden alan" buff süresi dolarsa sessizce iptal olsun
+        if (player.charType === CHAR_ID && player.kFollowUltiBuff) {
+            player.kFollowUltiBuffTimer -= 1; // ~1 kare/saniyeye yakın, hassasiyet kritik değil
+            if (player.kFollowUltiBuffTimer <= 0) {
+                player.kFollowUltiBuff = false;
+                addFloatingNumber(player.x, player.y, "ALAN TAKİBİ SÖNDÜ", "#7f8c8d");
+            }
         }
     }
 
     function leafUpdate(ts) {
         for (let i = leafZones.length - 1; i >= 0; i--) {
             const z = leafZones[i];
+            if (z.followsPlayer) { z.x = player.x; z.y = player.y; }
             z.life -= ts;
             z.tickTimer = (z.tickTimer || 0) + ts;
             const doTick = z.tickTimer >= 60;
@@ -330,6 +404,12 @@
                     e._leafSlowed = false;
                 }
             });
+
+            // Oyuncu kendi alanının içinde duruyorsa saniyede 200 can kazanır
+            if (getDist(player, z) < z.radius && !player.isDead) {
+                player.hp = Math.min(player.maxHp, player.hp + (ULTI_STANDING_HEAL_PER_SEC / 60) * ts);
+                if (doTick) addFloatingNumber(player.x, player.y - 20, "+" + ULTI_STANDING_HEAL_PER_SEC, "#2ecc71");
+            }
 
             if (z.life <= 0) {
                 getActiveEnemies().forEach(e => {
@@ -361,16 +441,33 @@
             }
             if (hitObstacle) { leafBullets.splice(i, 1); continue; }
 
+            const inZone = playerInOwnZone();
+            if (inZone) {
+                // Alan içindeyken: mermi DELİP GEÇER, birden fazla düşmana vurabilir
+                // ama aynı düşmana (bu mermiyle) iki kez vuramaz (hitTargets ile takip).
+                for (const e of getActiveEnemies()) {
+                    if (b.hitTargets.includes(e)) continue;
+                    if (getDist(b, e) < e.radius + LEAF_HIT_PAD) {
+                        b.hitTargets.push(e);
+                        e.hp -= b.dmg; addFloatingNumber(e.x, e.y - 6, b.dmg, "#27ae60");
+                        e.hp -= ULTI_BONUS_DAMAGE; addFloatingNumber(e.x, e.y + 10, ULTI_BONUS_DAMAGE, "#f1c40f");
+                        e.kbX = (e.kbX || 0) + Math.cos(b.angle) * KNOCKBACK_MAG;
+                        e.kbY = (e.kbY || 0) + Math.sin(b.angle) * KNOCKBACK_MAG;
+                        // İsabetli vuruş başına can kazancı
+                        player.hp = Math.min(player.maxHp, player.hp + ULTI_HIT_HEAL);
+                        addFloatingNumber(player.x, player.y, "+" + ULTI_HIT_HEAL, "#2ecc71");
+                    }
+                }
+                // Mermi delip geçtiği için burada silinmiyor - sadece duvar/menzil
+                // sınırına takılınca (döngünün başındaki kontrollerle) kalkıyor.
+                continue;
+            }
+
+            // Alan dışında: eski davranış - ilk isabette dur ve kaybol
             let hit = false;
             for (const e of getActiveEnemies()) {
                 if (getDist(b, e) < e.radius + LEAF_HIT_PAD) {
-                    if (playerInOwnZone()) {
-                        // DÜZELTME: artık iki kez değil, TEK vuruş + 300 sabit bonus
-                        e.hp -= b.dmg; addFloatingNumber(e.x, e.y - 6, b.dmg, "#27ae60");
-                        e.hp -= ULTI_BONUS_DAMAGE; addFloatingNumber(e.x, e.y + 10, ULTI_BONUS_DAMAGE, "#f1c40f");
-                    } else {
-                        e.hp -= b.dmg; addFloatingNumber(e.x, e.y, b.dmg, "#27ae60");
-                    }
+                    e.hp -= b.dmg; addFloatingNumber(e.x, e.y, b.dmg, "#27ae60");
                     e.kbX = (e.kbX || 0) + Math.cos(b.angle) * KNOCKBACK_MAG;
                     e.kbY = (e.kbY || 0) + Math.sin(b.angle) * KNOCKBACK_MAG;
                     hit = true;
