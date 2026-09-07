@@ -1,11 +1,10 @@
-// ========== mod7.js (BUZUL ÇAĞI) - BUZ BOĞASI VE HEYKEL GÜNCELLEMESİ ==========
-// - Buz Boğası öfkelendiğinde DÜZ çizgide aşırı hızlı koşar, dönemez.
-// - Çarpana kadar devam eder; oyuncuya 700 hasar + ileri fırlatır, durmaz.
-// - Öfkesi bitince kısa aralıkla tekrar hedef alıp koşar.
-// - Ölünce 1 Buz Botu çıkarır.
-// - Siperler üst üste binemez, duvarlara taşmaz.
-// - Heykel saldırısı oyuncuyu Buz Botu gibi 25 birim iter.
-// - Sersemleme yıldızları çember şeklinde döner (animasyonlu).
+// ========== mod7.js (BUZUL ÇAĞI) - GÜNCELLEMELER ==========
+// - Siperler üst üste binebilir (mesafe kontrolü yok).
+// - Buz Boğası: 6000 can, 3 saniyede bir hasar verir, öfke sırasında dönemez.
+// - Heykel knockback: 25 (Buz Botu kadar).
+// - Heykel Tıraşı ilk doğduğunda 4 saniyede heykel yapar.
+// - Buz Boğası siperi parçalayıp durmadan devam eder, sadece duvar durdurur.
+// - Heykelden çıkan büyük buz slime ölünce 2 küçük buz slime çıkarır.
 
 (function () {
     'use strict';
@@ -56,14 +55,15 @@
     const HEYKEL_TIRASI_HASAR = 300;
     const HEYKEL_TIRASI_SPAWN_INTERVAL = 1200;
     const HEYKEL_TIRASI_SPAWN_WARN = 180;
-    const HEYKEL_INSAA_SURESI = 300;
+    const HEYKEL_INSAA_SURESI = 300;       // normal 5 saniye
+    const HEYKEL_ILK_INSAA_SURESI = 240;   // ilk doğduğunda 4 saniye
 
     // Heykel
     const HEYKEL_HP = 11100;
     const HEYKEL_SPEED = 0.6;
     const HEYKEL_RADIUS = 30;
     const HEYKEL_SALDIRI_HASAR = 20;
-    const HEYKEL_ITME_MESAFE = 25;          // Buz Botu gibi itme eklendi
+    const HEYKEL_ITME_MESAFE = 25;          // Buz Botu kadar
     const HEYKEL_SALDIRI_MENZIL = 25;
     const HEYKEL_SALDIRI_ARALIK = 100;
     const HEYKEL_PASIF_CAN_KAYBI = 300;
@@ -71,16 +71,16 @@
     const HEYKEL_IYILESTIRME = 100;
 
     // Buz Boğası
-    const BOGA_HP = 8000;
-    const BOGA_NORMAL_HIZ = 0.5;           // normalde yavaş takip
-    const BOGA_KOSMA_HIZ = 8.8;            // aşırı yüksek hız (manuel değer)
-    const BOGA_BEKLEME_SURE = 60;          // 1 saniye
-    const BOGA_SARJ_SURE = 40;             // kısa şarj
-    const BOGA_OFKE_SURE = 70;             // öfke süresi (yaklaşık 1.2 sn)
+    const BOGA_HP = 6000;                  // can düşürüldü
+    const BOGA_NORMAL_HIZ = 0.5;
+    const BOGA_KOSMA_HIZ = 8.8;
+    const BOGA_BEKLEME_SURE = 60;
+    const BOGA_SARJ_SURE = 40;
+    const BOGA_OFKE_SURE = 70;
     const BOGA_TEMAS_HASAR = 700;
     const BOGA_CARPMA_HASAR = 200;
     const BOGA_ITME_MESAFE = 30;
-    const BOGA_SERSEMLE_SURE = 120;        // 2 saniye
+    const BOGA_SERSEMLE_SURE = 120;
     const BOGA_SPAWN_INTERVAL = 1500;
     const BOGA_SPAWN_WARN = 180;
 
@@ -137,33 +137,17 @@
             const cy = canvas.height / 2;
             ciritciSpawnUyarilari.push({ x: cx, y: cy, timer: CIRITCI_SPAWN_WARN });
 
+            // Siperler üst üste binebilir, mesafe kontrolü yok
             window.spawnObstacle = function () {
                 if (window.GAME_MODE !== MOD_ID) {
                     if (originalSpawnObstacle) originalSpawnObstacle();
                     return;
                 }
                 if (obstacles.length >= 12) return;
-                const margin = 50;
-                let x, y;
-                let attempts = 0;
-                let valid = false;
-                while (!valid && attempts < 20) {
-                    attempts++;
-                    x = Math.random() * (canvas.width - margin * 2) + margin;
-                    y = Math.random() * (canvas.height - margin * 2) + margin;
-                    valid = true;
-                    // Üst üste binme kontrolü
-                    for (const o of obstacles) {
-                        if (Math.hypot(x - o.x, y - o.y) < 80) {
-                            valid = false;
-                            break;
-                        }
-                    }
-                    // Duvarlara taşma kontrolü zaten margin ile
-                }
-                if (valid) {
-                    obstacles.push({ x, y, radius: 35 + Math.random() * 15, hp: 800, maxHp: 800 });
-                }
+                const margin = 40;
+                const x = Math.random() * (canvas.width - margin * 2) + margin;
+                const y = Math.random() * (canvas.height - margin * 2) + margin;
+                obstacles.push({ x, y, radius: 35 + Math.random() * 15, hp: 800, maxHp: 800 });
             };
         },
         onUpdate: function (ts) {
@@ -278,6 +262,7 @@
                         speed: HEYKEL_TIRASI_SPEED, baseSpeed: HEYKEL_TIRASI_SPEED,
                         angle: 0, lastShot: 0,
                         insaatSure: -1,
+                        ilkInsa: true,
                         isDead: false, isActive: true,
                         color: '#8e44ad', kbX: 0, kbY: 0,
                         oSp: HEYKEL_TIRASI_SPEED, oR: HEYKEL_TIRASI_RADIUS
@@ -311,6 +296,8 @@
                         beklemeSure: BOGA_BEKLEME_SURE,
                         sarjSure: 0,
                         ofkeSure: 0,
+                        ofkeAci: 0,
+                        sonVurusZamani: 0,
                         sersemleSure: 0,
                         isDead: false, isActive: true,
                         color: '#5dade2', kbX: 0, kbY: 0,
@@ -327,7 +314,6 @@
                 if (b.hp <= 0 && !b.isDead) {
                     b.isDead = true;
                     spawnParticles(b.x, b.y, '#5dade2', 'smoke');
-                    // Ölünce 1 Buz Botu çıkar
                     buzBotlari.push({
                         x: b.x, y: b.y,
                         radius: BUZ_BOT_RADIUS,
@@ -347,7 +333,6 @@
                 const canSeePlayer = !player.isDead && !player.isInvisible;
 
                 if (b.durum === 'takip') {
-                    // Normalde yavaşça oyuncuyu takip
                     if (canSeePlayer) {
                         b.angle = Math.atan2(player.y - b.y, player.x - b.x);
                         const d = getDist(b, player);
@@ -363,7 +348,6 @@
                         b.sarjSure = BOGA_SARJ_SURE;
                     }
                 } else if (b.durum === 'sarj') {
-                    // Şarjlanırken yavaşça oyuncuya hareket eder
                     b.sarjSure -= ts;
                     if (canSeePlayer) {
                         b.angle = Math.atan2(player.y - b.y, player.x - b.x);
@@ -378,36 +362,45 @@
                         b.durum = 'ofke';
                         b.ofkeSure = BOGA_OFKE_SURE;
                         if (canSeePlayer) {
-                            b.angle = Math.atan2(player.y - b.y, player.x - b.x);
+                            b.ofkeAci = Math.atan2(player.y - b.y, player.x - b.x);
+                        } else {
+                            b.ofkeAci = b.angle;
                         }
                     }
                 } else if (b.durum === 'ofke') {
-                    // Öfkeli koşu: düz çizgi, dönemez
+                    // Öfke sırasında dönüş yok, sadece sabit açıda ilerler
                     b.ofkeSure -= ts;
-                    b.speed = BOGA_KOSMA_HIZ;
 
-                    b.x += Math.cos(b.angle) * b.speed * ts;
-                    b.y += Math.sin(b.angle) * b.speed * ts;
+                    b.x += Math.cos(b.ofkeAci) * BOGA_KOSMA_HIZ * ts;
+                    b.y += Math.sin(b.ofkeAci) * BOGA_KOSMA_HIZ * ts;
 
-                    // Siperlere çarpma
+                    // Siperlere çarpma: parçala, slime çıkar, durma
                     for (let j = obstacles.length - 1; j >= 0; j--) {
                         const o = obstacles[j];
                         if (getDist(b, o) < b.radius + o.radius) {
                             o.hp = 0;
+                            // Siperden 2 Buz Slime çıkar
+                            for (let k = 0; k < 2; k++) {
+                                buzSlimeLari.push({
+                                    x: o.x + (Math.random() - 0.5) * 30,
+                                    y: o.y + (Math.random() - 0.5) * 30,
+                                    radius: SLIME_RADIUS,
+                                    hp: SLIME_HP, maxHp: SLIME_HP,
+                                    speed: SLIME_SPEED, baseSpeed: SLIME_SPEED,
+                                    angle: Math.random() * Math.PI * 2,
+                                    isDead: false, isActive: true,
+                                    color: '#aed6f1', kbX: 0, kbY: 0,
+                                    oSp: SLIME_SPEED, oR: SLIME_RADIUS
+                                });
+                            }
+                            spawnParticles(o.x, o.y, '#5dade2', 'normal');
                             addFloatingNumber(o.x, o.y, "SİPER YIKILDI!", "#e74c3c");
-                            b.hp -= BOGA_CARPMA_HASAR;
-                            addFloatingNumber(b.x, b.y, BOGA_CARPMA_HASAR, "#e74c3c");
-                            b.durum = 'sersemleme';
-                            b.sersemleSure = BOGA_SERSEMLE_SURE;
-                            b.speed = BOGA_NORMAL_HIZ;
-                            spawnParticles(b.x, b.y, '#5dade2', 'smoke');
-                            break;
+                            // Buz Boğası devam eder, sersemlemez
                         }
                     }
 
-                    // Duvara çarpma
+                    // Duvara çarpma: durur, sersemler
                     if (b.x < WALL_THICKNESS + b.radius || b.x > canvas.width - WALL_THICKNESS - b.radius) {
-                        b.angle = Math.PI - b.angle;
                         b.hp -= BOGA_CARPMA_HASAR;
                         b.x = clampPos(b.x, b.radius + WALL_THICKNESS, canvas.width - b.radius - WALL_THICKNESS);
                         b.durum = 'sersemleme';
@@ -415,7 +408,6 @@
                         b.speed = BOGA_NORMAL_HIZ;
                     }
                     if (b.y < WALL_THICKNESS + b.radius || b.y > canvas.height - WALL_THICKNESS - b.radius) {
-                        b.angle = -b.angle;
                         b.hp -= BOGA_CARPMA_HASAR;
                         b.y = clampPos(b.y, b.radius + WALL_THICKNESS, canvas.height - b.radius - WALL_THICKNESS);
                         b.durum = 'sersemleme';
@@ -423,17 +415,20 @@
                         b.speed = BOGA_NORMAL_HIZ;
                     }
 
-                    // Oyuncuya çarpma
+                    // Oyuncuya çarpma: 3 saniyede bir hasar, her çarpmada itme
                     if (!player.isDead && getDist(b, player) < b.radius + player.radius) {
-                        player.hp -= BOGA_TEMAS_HASAR;
-                        addFloatingNumber(player.x, player.y, BOGA_TEMAS_HASAR, "#e74c3c");
-                        player.lastHitTime = Date.now();
+                        const simdi = Date.now();
+                        if (simdi - b.sonVurusZamani >= 3000) {
+                            b.sonVurusZamani = simdi;
+                            player.hp -= BOGA_TEMAS_HASAR;
+                            addFloatingNumber(player.x, player.y, BOGA_TEMAS_HASAR, "#e74c3c");
+                            player.lastHitTime = Date.now();
+                        }
                         const itmeAci = getAngle(b, player);
                         player.x += Math.cos(itmeAci) * BOGA_ITME_MESAFE;
                         player.y += Math.sin(itmeAci) * BOGA_ITME_MESAFE;
                         player.x = clampPos(player.x, player.radius + WALL_THICKNESS, canvas.width - player.radius - WALL_THICKNESS);
                         player.y = clampPos(player.y, player.radius + WALL_THICKNESS, canvas.height - player.radius - WALL_THICKNESS);
-                        // Çarptıktan sonra durmaz, devam eder (öfke süresi bitene kadar)
                     }
 
                     if (b.ofkeSure <= 0) {
@@ -468,7 +463,8 @@
                 const canSeePlayer = !player.isDead && !player.isInvisible;
 
                 if (h.insaatSure === -1 && heykeller.length === 0 && canSeePlayer) {
-                    h.insaatSure = HEYKEL_INSAA_SURESI;
+                    h.insaatSure = h.ilkInsa ? HEYKEL_ILK_INSAA_SURESI : HEYKEL_INSAA_SURESI;
+                    h.ilkInsa = false;
                     h.insaatX = h.x;
                     h.insaatY = h.y;
                 }
@@ -579,7 +575,6 @@
                             player.hp -= HEYKEL_SALDIRI_HASAR;
                             addFloatingNumber(player.x, player.y, HEYKEL_SALDIRI_HASAR, "#85c1e9");
                             player.lastHitTime = Date.now();
-                            // İtme eklendi
                             const itmeAci = getAngle(hey, player);
                             player.x += Math.cos(itmeAci) * HEYKEL_ITME_MESAFE;
                             player.y += Math.sin(itmeAci) * HEYKEL_ITME_MESAFE;
@@ -601,13 +596,27 @@
                 resolveObstacleCollision(hey);
             }
 
-            // Büyük Buz Slime güncelleme
+            // Büyük Buz Slime güncelleme (ölünce 2 küçük slime çıkar)
             for (let i = buyukBuzSlimeLari.length - 1; i >= 0; i--) {
                 const b = buyukBuzSlimeLari[i];
 
                 if (b.hp <= 0 && !b.isDead) {
                     b.isDead = true;
                     spawnParticles(b.x, b.y, b.color);
+                    // 2 küçük buz slime çıkar
+                    for (let k = 0; k < 2; k++) {
+                        buzSlimeLari.push({
+                            x: b.x + (Math.random() - 0.5) * 20,
+                            y: b.y + (Math.random() - 0.5) * 20,
+                            radius: SLIME_RADIUS,
+                            hp: SLIME_HP, maxHp: SLIME_HP,
+                            speed: SLIME_SPEED, baseSpeed: SLIME_SPEED,
+                            angle: Math.random() * Math.PI * 2,
+                            isDead: false, isActive: true,
+                            color: '#aed6f1', kbX: 0, kbY: 0,
+                            oSp: SLIME_SPEED, oR: SLIME_RADIUS
+                        });
+                    }
                     triggerBotKill(b.x, b);
                 }
                 if (b.isDead) { buyukBuzSlimeLari.splice(i, 1); continue; }
@@ -1111,7 +1120,7 @@
                 ctx.save();
                 ctx.translate(h.x, h.y);
                 ctx.globalAlpha = 0.7;
-                const ilerleme = 1 - (h.insaatSure / HEYKEL_INSAA_SURESI);
+                const ilerleme = 1 - (h.insaatSure / (h.ilkInsa ? HEYKEL_ILK_INSAA_SURESI : HEYKEL_INSAA_SURESI));
                 ctx.fillStyle = 'rgba(0,0,0,0.5)';
                 ctx.fillRect(-20, -h.radius - 30, 40, 6);
                 ctx.fillStyle = '#85c1e9';
@@ -1216,7 +1225,6 @@
             ctx.fillRect(-25, -b.radius - 15, 50 * (b.hp / b.maxHp), 5);
 
             ctx.rotate(b.angle);
-            // Büyük gövde
             ctx.fillStyle = '#5dade2';
             ctx.beginPath();
             ctx.arc(0, 0, b.radius, 0, Math.PI * 2);
@@ -1225,7 +1233,6 @@
             ctx.lineWidth = 3;
             ctx.stroke();
 
-            // Buz kristali desenleri
             ctx.fillStyle = 'rgba(255,255,255,0.4)';
             ctx.beginPath();
             ctx.moveTo(5, 8);
@@ -1234,7 +1241,6 @@
             ctx.closePath();
             ctx.fill();
 
-            // Boynuzlar (daha doğal)
             ctx.fillStyle = '#85c1e9';
             ctx.beginPath();
             ctx.moveTo(8, -14);
@@ -1249,7 +1255,6 @@
             ctx.closePath();
             ctx.fill();
 
-            // Gözler (tehditkar)
             ctx.fillStyle = '#fff';
             ctx.shadowColor = '#fff';
             ctx.shadowBlur = 4;
@@ -1261,7 +1266,6 @@
             ctx.fill();
             ctx.shadowBlur = 0;
 
-            // Göz bebekleri
             ctx.fillStyle = '#1a5276';
             ctx.beginPath();
             ctx.arc(11, -6, 2, 0, Math.PI * 2);
@@ -1270,7 +1274,6 @@
             ctx.arc(11, 6, 2, 0, Math.PI * 2);
             ctx.fill();
 
-            // Şarjlanma halkası
             if (b.durum === 'sarj') {
                 ctx.rotate(-b.angle);
                 const ilerleme = 1 - (b.sarjSure / BOGA_SARJ_SURE);
@@ -1282,7 +1285,6 @@
                 ctx.rotate(b.angle);
             }
 
-            // Sersemleme yıldızları (çember şeklinde döner)
             if (b.durum === 'sersemleme') {
                 ctx.rotate(-b.angle);
                 const animAci = Date.now() / 150;
@@ -1299,7 +1301,6 @@
                 ctx.rotate(b.angle);
             }
 
-            // Koşma efekti
             if (b.durum === 'ofke') {
                 ctx.rotate(-b.angle);
                 ctx.strokeStyle = 'rgba(174, 214, 241, 0.8)';
