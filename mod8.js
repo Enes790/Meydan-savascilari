@@ -14,11 +14,11 @@
     const SLIME_HP = 300;
     const SLIME_SPEED = 2.0;
     const SLIME_RADIUS = 12;
-    const SLIME_DAMAGE = 100;
+    const SLIME_DAMAGE = 75;
 
     // Orta Buz Slime
-    const ORTA_SLIME_HP = 900;
-    const ORTA_SLIME_SPEED = 1.8;
+    const ORTA_SLIME_HP = 500;
+    const ORTA_SLIME_SPEED = 1.5;
     const ORTA_SLIME_RADIUS = 18;
     const ORTA_SLIME_DAMAGE = 200;
     const ORTA_SLIME_MENZIL = 430;
@@ -26,8 +26,8 @@
     const ORTA_SLIME_MAX_MERMI = 3;
 
     // Büyük Buz Slime
-    const BUYUK_SLIME_HP = 1800;
-    const BUYUK_SLIME_SPEED = 1.5;
+    const BUYUK_SLIME_HP = 1200;
+    const BUYUK_SLIME_SPEED = 1.3;
     const BUYUK_SLIME_RADIUS = 25;
     const BUYUK_SLIME_DAMAGE = 250;
 
@@ -39,13 +39,13 @@
     const BUZ_BOT_ITME_MESAFE = 40;
     const BUZ_BOT_PATLAMA_YARICAP = 68;
     const BUZ_BOT_PATLAMA_HASAR = 150;
-    const BUZ_BOT_SPAWN_INTERVAL = 900;
+    const BUZ_BOT_SPAWN_INTERVAL = 930;
     const BUZ_BOT_SPAWN_WARN = 180;
     const BUZ_BOT_SALDIRI_ARALIK = 2000;
     const BUZ_BOT_VURUS_ANIM = 12;
 
     // Buz Ciritçisi
-    const CIRITCI_HP = 2200;
+    const CIRITCI_HP = 2000;
     const CIRITCI_SPEED = 0.8;
     const CIRITCI_RADIUS = 18;
     const CIRITCI_SHOOT_RANGE = 261;
@@ -56,18 +56,18 @@
     const CIRITCI_MERMI_HIZ = BOT_BULLET_SPEED * 1.13;
 
     // Heykel Tıraşı
-    const HEYKEL_TIRASI_HP = 1700;
+    const HEYKEL_TIRASI_HP = 1200;
     const HEYKEL_TIRASI_SPEED = 0.5;
     const HEYKEL_TIRASI_RADIUS = 18;
     const HEYKEL_TIRASI_MENZIL = 140;
     const HEYKEL_TIRASI_HASAR = 200;
     const HEYKEL_TIRASI_SPAWN_INTERVAL = 1200;
     const HEYKEL_TIRASI_SPAWN_WARN = 180;
-    const HEYKEL_INSAA_SURESI = 300;
-    const HEYKEL_ILK_INSAA_SURESI = 240;
+    const HEYKEL_INSAA_SURESI = 360;
+    const HEYKEL_ILK_INSAA_SURESI = 300;
 
     // Heykel
-    const HEYKEL_HP = 10100;
+    const HEYKEL_HP = 8000;
     const HEYKEL_SPEED = 0.6;
     const HEYKEL_RADIUS = 30;
     const HEYKEL_SALDIRI_HASAR = 20;
@@ -82,14 +82,14 @@
     const BOGA_HP = 6000;
     const BOGA_NORMAL_HIZ = 0.5;
     const BOGA_KOSMA_HIZ = 8.8;
-    const BOGA_BEKLEME_SURE = 60;
-    const BOGA_SARJ_SURE = 70;
-    const BOGA_OFKE_SURE = 70;
+    const BOGA_BEKLEME_SURE = 120;
+    const BOGA_SARJ_SURE = 90;
+    const BOGA_OFKE_SURE = 90;
     const BOGA_TEMAS_HASAR = 400;
     const BOGA_ITME_MESAFE = 75;
-    const BOGA_SERSEMLE_SURE = 120;
-    const BOGA_SPAWN_INTERVAL = 1500;
-    const BOGA_SPAWN_WARN = 180;
+    const BOGA_SERSEMLE_SURE = 150;
+    const BOGA_SPAWN_INTERVAL = 1900;
+    const BOGA_SPAWN_WARN = 360;
 
     let buzSlimeLari = [];
     let ortaBuzSlimeLari = [];
