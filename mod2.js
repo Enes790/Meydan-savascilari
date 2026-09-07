@@ -1,8 +1,8 @@
-// ========== mod2.js (YAPRAKÇI) - DÜZELTİLMİŞ VERSİYON ==========
-// - Hook sistemi kullanılarak diğer modüllerle çakışma giderildi.
-// - Zıplama aksesuarı için nişan alma eklendi (Gölge gibi buton sürükleme).
-// - Aksesuar bekleme süreleri düzgün gösteriliyor.
-// - chargeUlti zincirleme yapıya çevrildi.
+// ========== mod2.js (YAPRAKÇI) - YENİDEN YAZILMIŞ, HEDEF GÖSTERGELİ ==========
+// - Tüm çizimler hook ile yapılır (diğer modüller bozulmaz).
+// - Mermiler ana oyun döngüsüne bağlıdır (requestAnimationFrame çakışması yok).
+// - Zıplama aksesuarı: butona basılı tutup sürükleyince hedef noktası gösterilir,
+//   bırakınca oraya ışınlanır. Gölge'nin sıçrayışındaki gibi iniş yeri işareti vardır.
 
 (function () {
     'use strict';
@@ -12,7 +12,7 @@
     const CHAR_HP = 2600;
     const CHAR_SPEED = 4.2;
 
-    const LEAF_RANGE = 420 * 0.85;
+    const LEAF_RANGE = 357;
     const LEAF_BULLET_SPEED = PLAYER_BULLET_SPEED * 0.75;
     const MID_DAMAGE = 500;
     const SIDE_DAMAGE = 400;
@@ -30,7 +30,7 @@
     const FOLLOW_BUFF_DURATION = 900;
     const FOLLOW_GADGET2_COOLDOWN = 1200;
 
-    const ULTI_ZONE_RADIUS = 114 * 0.84;
+    const ULTI_ZONE_RADIUS = 96;
     const ULTI_ZONE_DURATION = 480;
     const ULTI_ZONE_DPS = 150;
     const ULTI_SLOW_FACTOR = 0.4;
@@ -44,11 +44,12 @@
 
     let leafBullets = [];
     let leafZones = [];
-    let yaprakAimActive = false;   // nişan durumu
+    let yaprakAimActive = false;
     let yaprakAimStartX = 0;
     let yaprakAimStartY = 0;
     let yaprakAimAngle = 0;
     let yaprakAimPull = 1;
+    let wasJumping = false;
 
     function chainHook(name, fn) {
         const prev = window.GAME_EXT.hooks[name];
@@ -76,7 +77,7 @@
         return leafZones.some(z => getDist(player, z) < z.radius);
     }
 
-    // ========== TEMEL SALDIRI (3'lü yaprak) ==========
+    // ========== TEMEL SALDIRI ==========
     const originalFire = Player.prototype.fire;
     Player.prototype.fire = function (a, pullOverride) {
         if (this.charType !== CHAR_ID) return originalFire.call(this, a, pullOverride);
@@ -99,7 +100,7 @@
         }, SIDE_DELAY_MS);
     };
 
-    // ========== AKSESUAR 1: YAPRAK SIÇRAYIŞI (nişanlı) ==========
+    // ========== AKSESUAR 1: YAPRAK SIÇRAYIŞI (hedef göstergeli) ==========
     const originalActivateGadget = Player.prototype.activateGadget;
     Player.prototype.activateGadget = function (a, pull) {
         if (this.charType !== CHAR_ID) return originalActivateGadget.call(this, a, pull);
@@ -203,23 +204,43 @@
         yaprakAimActive = false;
     });
 
-    // ========== HOOK: DRAW (zincirleme, diğer modülleri bozmaz) ==========
+    // ========== HOOK: DRAW (hedef göstergesi, ulti alanı, mermiler) ==========
     chainHook('onDraw', function (ctx2) {
         if (player.charType !== CHAR_ID) return;
 
-        // Nişan çizgisi
+        // Zıplama nişanı hedef göstergesi
         if (yaprakAimActive && !player.isDead && player.gadgetReady) {
             ctx2.save();
             ctx2.translate(player.x, player.y);
             ctx2.rotate(yaprakAimAngle);
             const maxDist = RANGE * 0.65;
             const dist = Math.max(60, maxDist * yaprakAimPull);
+
+            // Çizgi
             ctx2.beginPath(); ctx2.moveTo(0, 0); ctx2.lineTo(dist, 0);
             ctx2.strokeStyle = 'rgba(34, 153, 84, 0.7)'; ctx2.lineWidth = 3; ctx2.setLineDash([8, 6]);
-            ctx2.stroke();
-            ctx2.setLineDash([]);
-            ctx2.beginPath(); ctx2.arc(dist, 0, 10, 0, Math.PI * 2);
-            ctx2.fillStyle = 'rgba(34, 153, 84, 0.5)'; ctx2.fill();
+            ctx2.stroke(); ctx2.setLineDash([]);
+
+            // Hedef nokta (iniş yeri işareti)
+            const tx = clampPos(player.x + Math.cos(yaprakAimAngle) * dist, WALL_THICKNESS + player.radius + 5, canvas.width - WALL_THICKNESS - player.radius - 5);
+            const ty = clampPos(player.y + Math.sin(yaprakAimAngle) * dist, WALL_THICKNESS + player.radius + 5, canvas.height - WALL_THICKNESS - player.radius - 5);
+            const hedefX = tx - player.x;
+            const hedefY = ty - player.y;
+
+            ctx2.translate(hedefX, hedefY);
+            ctx2.rotate(-yaprakAimAngle);
+            // Daire
+            ctx2.beginPath(); ctx2.arc(0, 0, 12, 0, Math.PI * 2);
+            ctx2.strokeStyle = 'rgba(34, 153, 84, 0.9)'; ctx2.lineWidth = 2; ctx2.stroke();
+            // İç nokta
+            ctx2.beginPath(); ctx2.arc(0, 0, 3, 0, Math.PI * 2);
+            ctx2.fillStyle = 'rgba(34, 153, 84, 0.9)'; ctx2.fill();
+            // Parlama
+            ctx2.shadowColor = '#2ecc71'; ctx2.shadowBlur = 8;
+            ctx2.beginPath(); ctx2.arc(0, 0, 12, 0, Math.PI * 2);
+            ctx2.strokeStyle = 'rgba(46, 204, 113, 0.7)'; ctx2.lineWidth = 1.5; ctx2.stroke();
+            ctx2.shadowBlur = 0;
+
             ctx2.restore();
         }
 
@@ -245,8 +266,7 @@
             ctx2.globalAlpha = 0.7 * lifeRatio;
             ctx2.beginPath(); ctx2.arc(0, 0, z.radius * 0.82, 0, Math.PI * 2);
             ctx2.strokeStyle = '#a9dfbf'; ctx2.lineWidth = 2; ctx2.setLineDash([9, 14]);
-            ctx2.stroke();
-            ctx2.setLineDash([]);
+            ctx2.stroke(); ctx2.setLineDash([]);
 
             ctx2.restore();
         });
@@ -280,16 +300,24 @@
         });
     });
 
-    // ========== GADGET BUTONU İÇİN NİŞAN ALMA ==========
+    // ========== ANA OYUN DÖNGÜSÜNE BAĞLANMA (mermi hareketi garantisi) ==========
+    const originalUpdate = window.update;
+    window.update = function(ts) {
+        originalUpdate(ts);
+        if (gameStarted && player.charType === CHAR_ID) {
+            leafUpdate(ts);
+            ensureLeafUI(ts);
+        }
+    };
+
+    // ========== NİŞAN ALMA (butonla) ==========
     const originalSetupBtnAim = window.setupBtnAim;
     if (typeof originalSetupBtnAim === 'function') {
         window.setupBtnAim = function(btn, aimObj, checkFunc, actionFunc) {
             originalSetupBtnAim(btn, aimObj, checkFunc, actionFunc);
-            // Gadget1 için özel nişan: butona basılı tutunca göster, bırakınca zıpla
             if (btn === gadgetBtn) {
                 btn.addEventListener('touchstart', e => {
-                    if (player.charType !== CHAR_ID) return;
-                    if (!player.gadgetReady) return;
+                    if (player.charType !== CHAR_ID || !player.gadgetReady) return;
                     yaprakAimActive = true;
                     const t = e.changedTouches[0];
                     yaprakAimStartX = t.clientX;
@@ -297,23 +325,19 @@
                     yaprakAimAngle = player.angle;
                     yaprakAimPull = 0;
                 }, {passive: false});
-
                 btn.addEventListener('touchmove', e => {
                     if (!yaprakAimActive) return;
                     const t = e.changedTouches[0];
                     yaprakAimAngle = getAngle({x: yaprakAimStartX, y: yaprakAimStartY}, {x: t.clientX, y: t.clientY});
                     yaprakAimPull = Math.min(1, Math.hypot(t.clientX - yaprakAimStartX, t.clientY - yaprakAimStartY) / 160);
                 }, {passive: false});
-
                 btn.addEventListener('touchend', e => {
                     if (!yaprakAimActive) return;
                     yaprakAimActive = false;
                     player.activateGadget(yaprakAimAngle, yaprakAimPull < 0.05 ? 1 : yaprakAimPull);
                 });
-
                 btn.addEventListener('mousedown', e => {
-                    if (player.charType !== CHAR_ID) return;
-                    if (!player.gadgetReady) return;
+                    if (player.charType !== CHAR_ID || !player.gadgetReady) return;
                     yaprakAimActive = true;
                     yaprakAimStartX = e.clientX;
                     yaprakAimStartY = e.clientY;
@@ -334,19 +358,8 @@
         };
     }
 
-    // ========== GÜNCELLEME DÖNGÜSÜ ==========
-    let lastTimeLeaf = 0;
-    function leafLoop(t) {
-        if (!lastTimeLeaf) lastTimeLeaf = t;
-        const ts = Math.min(3, (t - lastTimeLeaf) / 16.666);
-        lastTimeLeaf = t;
-        if (gameStarted) leafUpdate(ts);
-        ensureLeafUI();
-        requestAnimationFrame(leafLoop);
-    }
-    requestAnimationFrame(leafLoop);
-
-    function ensureLeafUI() {
+    // ========== UI GÜNCELLEME ==========
+    function ensureLeafUI(ts) {
         if (!gameStarted) return;
         if (player.charType === CHAR_ID) {
             if (gadgetBtn) gadgetBtn.style.display = 'flex';
@@ -362,7 +375,6 @@
                 gadgetBtn2.dataset.yaprakLabelSet = '1';
             }
 
-            // Cooldown göstergeleri
             if (player.gadgetCooldown > 0) {
                 if (gadgetTimerText) gadgetTimerText.innerText = Math.ceil(player.gadgetCooldown / 60) + "s";
                 gadgetBtn.classList.add('cooldown');
@@ -400,8 +412,8 @@
         }
     }
 
+    // ========== MERMİ VE ALAN GÜNCELLEME ==========
     function leafUpdate(ts) {
-        // Ulti alanları
         for (let i = leafZones.length - 1; i >= 0; i--) {
             const z = leafZones[i];
             if (z.followsPlayer) { z.x = player.x; z.y = player.y; }
@@ -439,7 +451,6 @@
             }
         }
 
-        // Mermiler
         for (let i = leafBullets.length - 1; i >= 0; i--) {
             const b = leafBullets[i];
             b.age = (b.age || 0) + ts;
