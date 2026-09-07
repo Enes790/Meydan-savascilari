@@ -1,9 +1,9 @@
-// ========== mod7.js (BUZUL ÇAĞI) - HEYKEL GÜÇLENDİRİLDİ, CAN KAYBI KALDIRILDI ==========
-// - Heykel saldırı başına can kaybetmez.
-// - Heykel canı: 11100 (10800 + 300).
-// - Heykel yok olunca 4 Buz Slime çıkar.
-// - Heykel menzili: 50, hasarı: 220, yapım süresi: 5 saniye.
-// - Heykel Tıraşı canı: 1300, menzili: 160, hasarı: 300.
+// ========== mod7.js (BUZUL ÇAĞI) - BUZ BOĞASI EKLENDİ, HEYKEL MENZİLİ DÜZELTİLDİ ==========
+// - Heykel menzili: 25
+// - Buz Boğası eklendi: can 8000, 4 sn sonra oyuncuya koşar, temas 600 hasar + itme,
+//   sipere çarpınca siperi yıkar ve kendisi sersemler, duvara çarpınca sersemlemez.
+// - Buz Boğası ve Heykel Tıraşı aynı anda spawn olamaz (birbirini engeller).
+// - Skor yazısı çizim sırası düzeltildi (üstte kalır).
 
 (function () {
     'use strict';
@@ -15,6 +15,12 @@
     const SLIME_SPEED = 2.5;
     const SLIME_RADIUS = 12;
     const SLIME_DAMAGE = 150;
+
+    // Büyük Buz Slime
+    const BUYUK_SLIME_HP = 1800;
+    const BUYUK_SLIME_SPEED = 1.5;
+    const BUYUK_SLIME_RADIUS = 25;
+    const BUYUK_SLIME_DAMAGE = 250;
 
     // Buz Botu
     const BUZ_BOT_HP = 4500;
@@ -41,39 +47,51 @@
     const CIRITCI_MERMI_HIZ = BOT_BULLET_SPEED * 0.87;
 
     // Heykel Tıraşı
-    const HEYKEL_TIRASI_HP = 1300;          // 1000 + 300
+    const HEYKEL_TIRASI_HP = 1300;
     const HEYKEL_TIRASI_SPEED = 0.5;
     const HEYKEL_TIRASI_RADIUS = 18;
-    const HEYKEL_TIRASI_MENZIL = 160;       // arttırıldı
-    const HEYKEL_TIRASI_HASAR = 300;        // 100 + 200
+    const HEYKEL_TIRASI_MENZIL = 180;
+    const HEYKEL_TIRASI_HASAR = 300;
     const HEYKEL_TIRASI_SPAWN_INTERVAL = 1200;
     const HEYKEL_TIRASI_SPAWN_WARN = 180;
-    const HEYKEL_INSAA_SURESI = 300;        // 5 saniye (6 - 1)
+    const HEYKEL_INSAA_SURESI = 300;
 
     // Heykel
-    const HEYKEL_HP = 11100;                // 10800 + 300
+    const HEYKEL_HP = 11100;
     const HEYKEL_SPEED = 0.6;
     const HEYKEL_RADIUS = 30;
-    const HEYKEL_SALDIRI_HASAR = 220;       // 20 + 200
-    const HEYKEL_ITME_MESAFE = 25;
-    const HEYKEL_SALDIRI_MENZIL = 50;       // arttırıldı
+    const HEYKEL_SALDIRI_HASAR = 20;
+    const HEYKEL_SALDIRI_MENZIL = 25;      // düzeltildi
     const HEYKEL_SALDIRI_ARALIK = 100;
-    // Heykel saldırı can kaybı kaldırıldı (HEYKEL_SALDIRI_CAN_KAYBI yok)
     const HEYKEL_PASIF_CAN_KAYBI = 300;
     const HEYKEL_PASIF_KAYIP_ARALIK = 180;
     const HEYKEL_IYILESTIRME = 100;
 
+    // Buz Boğası
+    const BOGA_HP = 8000;
+    const BOGA_SPEED = 2.0;               // koşma hızı
+    const BOGA_BEKLME_SURE = 240;          // 4 saniye
+    const BOGA_TEMAS_HASAR = 600;
+    const BOGA_ITME_MESAFE = 30;
+    const BOGA_SERSEMLE_SURE = 120;        // 2 saniye
+    const BOGA_SPAWN_INTERVAL = 1500;
+    const BOGA_SPAWN_WARN = 180;
+
     let buzSlimeLari = [];
+    let buyukBuzSlimeLari = [];
     let buzBotlari = [];
     let ciritciBotlari = [];
     let heykelTirasiBotlari = [];
     let heykeller = [];
+    let buzBogalari = [];
     let buzBotSpawnTimer = 0;
     let buzBotSpawnUyarilari = [];
     let ciritciRespawnTimer = -1;
     let ciritciSpawnUyarilari = [];
     let heykelTirasiSpawnTimer = 0;
     let heykelTirasiSpawnUyarilari = [];
+    let bogaSpawnTimer = 0;
+    let bogaSpawnUyarilari = [];
     let sonTemasZamani = {};
 
     const originalSpawnObstacle = window.spawnObstacle;
@@ -83,16 +101,20 @@
         label: 'Buzul Çağı',
         onStart: function () {
             buzSlimeLari = [];
+            buyukBuzSlimeLari = [];
             buzBotlari = [];
             ciritciBotlari = [];
             heykelTirasiBotlari = [];
             heykeller = [];
+            buzBogalari = [];
             buzBotSpawnTimer = 0;
             buzBotSpawnUyarilari = [];
             ciritciRespawnTimer = -1;
             ciritciSpawnUyarilari = [];
             heykelTirasiSpawnTimer = 0;
             heykelTirasiSpawnUyarilari = [];
+            bogaSpawnTimer = 0;
+            bogaSpawnUyarilari = [];
             sonTemasZamani = {};
 
             bot.isActive = false; bot.isDead = true;
@@ -210,11 +232,11 @@
                 }
             }
 
-            // Heykel Tıraşı spawn
+            // Heykel Tıraşı spawn (Buz Boğası yoksa)
             heykelTirasiSpawnTimer += ts;
             if (heykelTirasiSpawnTimer >= HEYKEL_TIRASI_SPAWN_INTERVAL) {
                 heykelTirasiSpawnTimer = 0;
-                if (heykelTirasiBotlari.length < 1) {
+                if (heykelTirasiBotlari.length < 1 && buzBogalari.length < 1) {
                     const x = Math.random() * (canvas.width - 200) + 100;
                     const y = Math.random() * (canvas.height - 200) + 100;
                     heykelTirasiSpawnUyarilari.push({ x, y, timer: HEYKEL_TIRASI_SPAWN_WARN });
@@ -240,7 +262,124 @@
                 }
             }
 
-            // Heykel Tıraşı güncelleme
+            // Buz Boğası spawn (Heykel Tıraşı yoksa)
+            bogaSpawnTimer += ts;
+            if (bogaSpawnTimer >= BOGA_SPAWN_INTERVAL) {
+                bogaSpawnTimer = 0;
+                if (buzBogalari.length < 1 && heykelTirasiBotlari.length < 1) {
+                    const x = Math.random() * (canvas.width - 200) + 100;
+                    const y = Math.random() * (canvas.height - 200) + 100;
+                    bogaSpawnUyarilari.push({ x, y, timer: BOGA_SPAWN_WARN });
+                }
+            }
+
+            for (let i = bogaSpawnUyarilari.length - 1; i >= 0; i--) {
+                const u = bogaSpawnUyarilari[i];
+                u.timer -= ts;
+                if (u.timer <= 0) {
+                    buzBogalari.push({
+                        x: u.x, y: u.y,
+                        radius: 28,
+                        hp: BOGA_HP, maxHp: BOGA_HP,
+                        speed: BOGA_SPEED,
+                        angle: 0,
+                        durum: 'bekleme', // bekleme, kosma, sersemleme
+                        beklemeSure: BOGA_BEKLME_SURE,
+                        sersemleSure: 0,
+                        isDead: false, isActive: true,
+                        color: '#5dade2', kbX: 0, kbY: 0,
+                        oSp: BOGA_SPEED, oR: 28
+                    });
+                    bogaSpawnUyarilari.splice(i, 1);
+                }
+            }
+
+            // Buz Boğası güncelleme
+            for (let i = buzBogalari.length - 1; i >= 0; i--) {
+                const b = buzBogalari[i];
+
+                if (b.hp <= 0 && !b.isDead) {
+                    b.isDead = true;
+                    spawnParticles(b.x, b.y, '#5dade2', 'smoke');
+                    triggerBotKill(b.x, b);
+                }
+                if (b.isDead) { buzBogalari.splice(i, 1); continue; }
+
+                if (b.durum === 'bekleme') {
+                    b.beklemeSure -= ts;
+                    if (b.beklemeSure <= 0) {
+                        b.durum = 'kosma';
+                        if (!player.isDead) {
+                            b.angle = Math.atan2(player.y - b.y, player.x - b.x);
+                        }
+                    }
+                } else if (b.durum === 'sersemleme') {
+                    b.sersemleSure -= ts;
+                    if (b.sersemleSure <= 0) {
+                        b.durum = 'bekleme';
+                        b.beklemeSure = BOGA_BEKLME_SURE;
+                    }
+                } else if (b.durum === 'kosma') {
+                    // Hafif eğim: oyuncunun o anki yönüne doğru %15 eğilim
+                    if (!player.isDead) {
+                        const hedefAci = Math.atan2(player.y - b.y, player.x - b.x);
+                        let aciFarki = hedefAci - b.angle;
+                        // Açı farkını -PI ile PI arasına çek
+                        while (aciFarki > Math.PI) aciFarki -= Math.PI * 2;
+                        while (aciFarki < -Math.PI) aciFarki += Math.PI * 2;
+                        b.angle += aciFarki * 0.15; // hafif eğim, aniden dönmez
+                    }
+
+                    b.x += Math.cos(b.angle) * b.speed * ts;
+                    b.y += Math.sin(b.angle) * b.speed * ts;
+
+                    // Siperlere çarpma
+                    for (let j = obstacles.length - 1; j >= 0; j--) {
+                        const o = obstacles[j];
+                        if (getDist(b, o) < b.radius + o.radius) {
+                            // Siperi yık
+                            o.hp = 0;
+                            addFloatingNumber(o.x, o.y, "SİPER YIKILDI!", "#e74c3c");
+                            // Buz Boğası sersemler
+                            b.durum = 'sersemleme';
+                            b.sersemleSure = BOGA_SERSEMLE_SURE;
+                            spawnParticles(b.x, b.y, '#5dade2', 'smoke');
+                            break;
+                        }
+                    }
+
+                    // Duvara çarpma (sersemlemez, sadece yön değiştirir)
+                    if (b.x < WALL_THICKNESS + b.radius || b.x > canvas.width - WALL_THICKNESS - b.radius) {
+                        b.angle = Math.PI - b.angle;
+                        b.x = clampPos(b.x, b.radius + WALL_THICKNESS, canvas.width - b.radius - WALL_THICKNESS);
+                    }
+                    if (b.y < WALL_THICKNESS + b.radius || b.y > canvas.height - WALL_THICKNESS - b.radius) {
+                        b.angle = -b.angle;
+                        b.y = clampPos(b.y, b.radius + WALL_THICKNESS, canvas.height - b.radius - WALL_THICKNESS);
+                    }
+
+                    // Oyuncuya çarpma
+                    if (!player.isDead && getDist(b, player) < b.radius + player.radius) {
+                        player.hp -= BOGA_TEMAS_HASAR;
+                        addFloatingNumber(player.x, player.y, BOGA_TEMAS_HASAR, "#e74c3c");
+                        player.lastHitTime = Date.now();
+                        const itmeAci = getAngle(b, player);
+                        player.x += Math.cos(itmeAci) * BOGA_ITME_MESAFE;
+                        player.y += Math.sin(itmeAci) * BOGA_ITME_MESAFE;
+                        player.x = clampPos(player.x, player.radius + WALL_THICKNESS, canvas.width - player.radius - WALL_THICKNESS);
+                        player.y = clampPos(player.y, player.radius + WALL_THICKNESS, canvas.height - player.radius - WALL_THICKNESS);
+                        // Buz Boğası çarpmadan sonra sersemler
+                        b.durum = 'sersemleme';
+                        b.sersemleSure = BOGA_SERSEMLE_SURE;
+                    }
+                }
+
+                b.x = clampPos(b.x, b.radius + WALL_THICKNESS, canvas.width - b.radius - WALL_THICKNESS);
+                b.y = clampPos(b.y, b.radius + WALL_THICKNESS, canvas.height - b.radius - WALL_THICKNESS);
+                resolveObstacleCollision(b);
+            }
+
+            // Heykel Tıraşı güncelleme (sadece Buz Boğası yoksa)
             for (let i = heykelTirasiBotlari.length - 1; i >= 0; i--) {
                 const h = heykelTirasiBotlari[i];
 
@@ -329,21 +468,16 @@
                 if (hey.hp <= 0 && !hey.isDead) {
                     hey.isDead = true;
                     spawnParticles(hey.x, hey.y, '#85c1e9', 'smoke');
-                    // Heykel yok olunca 4 Buz Slime çıkar
-                    for (let k = 0; k < 4; k++) {
-                        const offsetX = (Math.random() - 0.5) * 50;
-                        const offsetY = (Math.random() - 0.5) * 50;
-                        buzSlimeLari.push({
-                            x: hey.x + offsetX, y: hey.y + offsetY,
-                            radius: SLIME_RADIUS,
-                            hp: SLIME_HP, maxHp: SLIME_HP,
-                            speed: SLIME_SPEED, baseSpeed: SLIME_SPEED,
-                            angle: Math.random() * Math.PI * 2,
-                            isDead: false, isActive: true,
-                            color: '#aed6f1', kbX: 0, kbY: 0,
-                            oSp: SLIME_SPEED, oR: SLIME_RADIUS
-                        });
-                    }
+                    buyukBuzSlimeLari.push({
+                        x: hey.x, y: hey.y,
+                        radius: BUYUK_SLIME_RADIUS,
+                        hp: BUYUK_SLIME_HP, maxHp: BUYUK_SLIME_HP,
+                        speed: BUYUK_SLIME_SPEED, baseSpeed: BUYUK_SLIME_SPEED,
+                        angle: Math.random() * Math.PI * 2,
+                        isDead: false, isActive: true,
+                        color: '#aed6f1', kbX: 0, kbY: 0,
+                        oSp: BUYUK_SLIME_SPEED, oR: BUYUK_SLIME_RADIUS
+                    });
                     triggerBotKill(hey.x, hey);
                 }
                 if (hey.isDead) { heykeller.splice(i, 1); continue; }
@@ -364,19 +498,12 @@
                         hey.y += Math.sin(hey.angle) * hey.speed * ts;
                     }
 
-                    // Saldırı: 100ms aralıklarla, 220 hasar, can kaybı yok
                     if (d < HEYKEL_SALDIRI_MENZIL + hey.radius + player.radius) {
                         if (Date.now() - hey.lastShot > HEYKEL_SALDIRI_ARALIK) {
                             hey.lastShot = Date.now();
                             player.hp -= HEYKEL_SALDIRI_HASAR;
                             addFloatingNumber(player.x, player.y, HEYKEL_SALDIRI_HASAR, "#85c1e9");
                             player.lastHitTime = Date.now();
-                            const itmeAci = getAngle(hey, player);
-                            player.x += Math.cos(itmeAci) * HEYKEL_ITME_MESAFE;
-                            player.y += Math.sin(itmeAci) * HEYKEL_ITME_MESAFE;
-                            player.x = clampPos(player.x, player.radius + WALL_THICKNESS, canvas.width - player.radius - WALL_THICKNESS);
-                            player.y = clampPos(player.y, player.radius + WALL_THICKNESS, canvas.height - player.radius - WALL_THICKNESS);
-                            // Saldırı başına can kaybı kaldırıldı
                         }
                     }
                 }
@@ -391,6 +518,36 @@
                 hey.x = clampPos(hey.x, hey.radius + WALL_THICKNESS, canvas.width - hey.radius - WALL_THICKNESS);
                 hey.y = clampPos(hey.y, hey.radius + WALL_THICKNESS, canvas.height - hey.radius - WALL_THICKNESS);
                 resolveObstacleCollision(hey);
+            }
+
+            // Büyük Buz Slime güncelleme
+            for (let i = buyukBuzSlimeLari.length - 1; i >= 0; i--) {
+                const b = buyukBuzSlimeLari[i];
+
+                if (b.hp <= 0 && !b.isDead) {
+                    b.isDead = true;
+                    spawnParticles(b.x, b.y, b.color);
+                    triggerBotKill(b.x, b);
+                }
+                if (b.isDead) { buyukBuzSlimeLari.splice(i, 1); continue; }
+
+                const canSeePlayer = !player.isDead && !player.isInvisible;
+                if (canSeePlayer) {
+                    b.angle = Math.atan2(player.y - b.y, player.x - b.x);
+                    b.x += Math.cos(b.angle) * b.speed * ts;
+                    b.y += Math.sin(b.angle) * b.speed * ts;
+                }
+
+                b.x = clampPos(b.x, b.radius + WALL_THICKNESS, canvas.width - b.radius - WALL_THICKNESS);
+                b.y = clampPos(b.y, b.radius + WALL_THICKNESS, canvas.height - b.radius - WALL_THICKNESS);
+                resolveObstacleCollision(b);
+
+                if (!player.isDead && !player.jumpInvulnerable && getDist(b, player) < b.radius + player.radius) {
+                    player.hp -= BUYUK_SLIME_DAMAGE;
+                    addFloatingNumber(player.x, player.y, BUYUK_SLIME_DAMAGE, "#e74c3c");
+                    player.lastHitTime = Date.now();
+                    b.hp = 0;
+                }
             }
 
             // Buz Slime güncelleme
@@ -532,16 +689,20 @@
         },
         onReset: function () {
             buzSlimeLari = [];
+            buyukBuzSlimeLari = [];
             buzBotlari = [];
             ciritciBotlari = [];
             heykelTirasiBotlari = [];
             heykeller = [];
+            buzBogalari = [];
             buzBotSpawnTimer = 0;
             buzBotSpawnUyarilari = [];
             ciritciRespawnTimer = -1;
             ciritciSpawnUyarilari = [];
             heykelTirasiSpawnTimer = 0;
             heykelTirasiSpawnUyarilari = [];
+            bogaSpawnTimer = 0;
+            bogaSpawnUyarilari = [];
             sonTemasZamani = {};
 
             if (originalSpawnObstacle) {
@@ -558,10 +719,12 @@
             extras = originalGetExtraEnemies() || [];
         }
         extras = extras.concat(buzSlimeLari.filter(b => !b.isDead));
+        extras = extras.concat(buyukBuzSlimeLari.filter(b => !b.isDead));
         extras = extras.concat(buzBotlari.filter(b => !b.isDead));
         extras = extras.concat(ciritciBotlari.filter(b => !b.isDead));
         extras = extras.concat(heykelTirasiBotlari.filter(b => !b.isDead));
         extras = extras.concat(heykeller.filter(b => !b.isDead));
+        extras = extras.concat(buzBogalari.filter(b => !b.isDead));
         return extras;
     };
 
@@ -643,6 +806,50 @@
             ctx.font = "bold 14px Arial";
             ctx.textAlign = "center";
             ctx.fillText(Math.ceil(u.timer / 60), 0, 5);
+            ctx.restore();
+        });
+
+        bogaSpawnUyarilari.forEach(u => {
+            ctx.save();
+            ctx.translate(u.x, u.y);
+            ctx.globalAlpha = Math.abs(Math.sin(Date.now() / 150));
+            ctx.beginPath();
+            ctx.arc(0, 0, 28 + 12, 0, Math.PI * 2);
+            ctx.strokeStyle = '#5dade2';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = '#5dade2';
+            ctx.font = "bold 14px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText(Math.ceil(u.timer / 60), 0, 5);
+            ctx.restore();
+        });
+
+        // Büyük Buz Slime'ları
+        buyukBuzSlimeLari.forEach(b => {
+            if (b.isDead) return;
+            ctx.save();
+            ctx.translate(b.x, b.y);
+            ctx.fillStyle = '#e74c3c';
+            ctx.fillRect(-20, -b.radius - 10, 40, 4);
+            ctx.fillStyle = '#2ecc71';
+            ctx.fillRect(-20, -b.radius - 10, 40 * (b.hp / b.maxHp), 4);
+            ctx.rotate(b.angle);
+            ctx.fillStyle = '#aed6f1';
+            ctx.beginPath();
+            ctx.arc(0, 0, b.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#5dade2';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.fillStyle = '#2e86c1';
+            ctx.beginPath();
+            ctx.arc(6, -5, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(6, 5, 3, 0, Math.PI * 2);
+            ctx.fill();
             ctx.restore();
         });
 
@@ -774,7 +981,7 @@
             ctx.restore();
         });
 
-        // Heykel Tıraşı (görsel iyileştirildi)
+        // Heykel Tıraşı
         heykelTirasiBotlari.forEach(h => {
             if (h.isDead) return;
             ctx.save();
@@ -832,7 +1039,7 @@
             }
         });
 
-        // Heykel (görsel iyileştirildi)
+        // Heykel
         heykeller.forEach(hey => {
             if (hey.isDead) return;
             ctx.save();
@@ -907,6 +1114,64 @@
             ctx.fill();
             ctx.restore();
         });
+
+        // Buz Boğası
+        buzBogalari.forEach(b => {
+            if (b.isDead) return;
+            ctx.save();
+            ctx.translate(b.x, b.y);
+
+            ctx.fillStyle = '#e74c3c';
+            ctx.fillRect(-25, -b.radius - 15, 50, 5);
+            ctx.fillStyle = '#2ecc71';
+            ctx.fillRect(-25, -b.radius - 15, 50 * (b.hp / b.maxHp), 5);
+
+            ctx.rotate(b.angle);
+            // Büyük gövde
+            ctx.fillStyle = '#5dade2';
+            ctx.beginPath();
+            ctx.arc(0, 0, b.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#2e86c1';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // Boynuzlar
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.moveTo(10, -15);
+            ctx.lineTo(18, -25);
+            ctx.lineTo(14, -15);
+            ctx.closePath();
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(10, 15);
+            ctx.lineTo(18, 25);
+            ctx.lineTo(14, 15);
+            ctx.closePath();
+            ctx.fill();
+
+            // Gözler
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(10, -6, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(10, 6, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Sersemleme yıldızları
+            if (b.durum === 'sersemleme') {
+                ctx.rotate(-b.angle);
+                ctx.fillStyle = '#f1c40f';
+                ctx.font = "bold 12px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText("★", 15, -20);
+                ctx.fillText("★", -15, -15);
+                ctx.fillText("★", 10, 20);
+            }
+            ctx.restore();
+        });
     };
 
     // ========== MOD SEÇİM KARTI + OK BUTONLARI ==========
@@ -929,7 +1194,7 @@
         card.style.padding = '15px 10px';
         card.innerHTML =
             '<span>Buzul Çağı</span>' +
-            '<small>Buz Botu + Ciritçi + Heykel Tıraşı</small>';
+            '<small>Buz Botu + Ciritçi + Heykel Tıraşı + Buz Boğası</small>';
         track.appendChild(card);
 
         card.addEventListener('click', () => {
