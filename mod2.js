@@ -1,11 +1,8 @@
 // ========== mod2.js (YAPRAKÇI) - DİKENLİ KÖK BİTKİSİ ==========
-// - Zıplama kaldırıldı, yerine bitki çağırma geldi.
-// - Bitki düşman mermilerini engeller, botlar bitkiyi hedef alır.
-// - Bitki her saniyede 1 yaprak mermisi atar, her atışta 100 can kaybeder.
-// - Ulti bitkiyi iyileştirir.
-// - Bitki yok edilince çevreye hasar ve güçlü itme uygular.
-// - Ulti bonus hasarı 100'e düşürüldü, mermiler ikinci kez vurmaz.
-// - Tüm güncellemeler hook'lara bağlandı (window.update/chargeUlti override yok).
+// - Bitki küçük, saksıda, kuş bakışı görünüm.
+// - Ulti dolumu düzeltildi (onChargeUlti hook'u ile).
+// - Patlama yeşil parçacıklarla.
+// - Diğer mekanikler aynı.
 
 (function () {
     'use strict';
@@ -25,17 +22,17 @@
     const LEAF_HIT_PAD = 8;
     const OBSTACLE_DAMAGE = 30;
 
-    // Dikenli Kök Bitkisi
-    const PLANT_MAX_HP = 800;             // başlangıç canı
+    // Dikenli Kök Bitkisi (küçük, saksıda)
+    const PLANT_MAX_HP = 800;
     const PLANT_DURATION = 600;           // 600 frame ≈ 10 saniye
-    const PLANT_ATTACK_INTERVAL = 60;     // 1 saniyede 1 atış (60 frame)
+    const PLANT_ATTACK_INTERVAL = 60;     // 1 saniyede 1 atış
     const PLANT_DAMAGE = 500;             // yaprakçının orta mermisiyle aynı
-    const PLANT_ATTACK_RADIUS = 300;      // bitki bu menzilde düşman görürse ateş eder
-    const PLANT_RADIUS = 40;              // bitki gövde yarıçapı
-    const PLANT_SELF_DAMAGE_PER_SHOT = 100; // her atışta kaybettiği can
-    const PLANT_EXPLOSION_DAMAGE = 150;   // yok olunca verdiği hasar
-    const PLANT_EXPLOSION_KNOCKBACK = 40; // itme gücü (Buz Botu benzeri)
-    const PLANT_COOLDOWN = 900;           // gadget bekleme süresi
+    const PLANT_ATTACK_RADIUS = 300;
+    const PLANT_RADIUS = 16;              // küçük bitki gövdesi
+    const PLANT_SELF_DAMAGE_PER_SHOT = 100;
+    const PLANT_EXPLOSION_DAMAGE = 150;
+    const PLANT_EXPLOSION_KNOCKBACK = 40;
+    const PLANT_COOLDOWN = 900;
 
     const FOLLOW_BUFF_DURATION = 900;
     const FOLLOW_GADGET2_COOLDOWN = 1200;
@@ -44,7 +41,7 @@
     const ULTI_ZONE_DURATION = 480;
     const ULTI_ZONE_DPS = 150;
     const ULTI_SLOW_FACTOR = 0.4;
-    const ULTI_BONUS_DAMAGE = 100;        // eski 300'den düşürüldü
+    const ULTI_BONUS_DAMAGE = 100;        // 300'den düşürüldü
     const ULTI_HIT_HEAL = 50;
     const ULTI_STANDING_HEAL_PER_SEC = 200;
 
@@ -54,7 +51,7 @@
 
     let leafBullets = [];
     let leafZones = [];
-    let leafPlants = [];   // aktif bitkiler (maks 1)
+    let leafPlants = [];
     let wasJumping = false;
 
     function chainHook(name, fn) {
@@ -117,9 +114,8 @@
             return;
         }
 
-        // Bitkiyi oyuncunun biraz önüne dik (veya direkt üzerine)
-        const plantX = this.x + Math.cos(this.angle) * 30;
-        const plantY = this.y + Math.sin(this.angle) * 30;
+        const plantX = this.x + Math.cos(this.angle) * 24;
+        const plantY = this.y + Math.sin(this.angle) * 24;
         leafPlants.push({
             x: plantX, y: plantY,
             radius: PLANT_RADIUS,
@@ -177,9 +173,14 @@
     // ========== ULTİ DOLDURMA (hook ile) ==========
     chainHook('onChargeUlti', function (amount) {
         if (player.charType !== CHAR_ID) return;
-        // Orijinal chargeUlti zaten çalıştı, burada ekstra işlem yapmaya gerek yok.
-        // Ama Yaprakçı için ulti dolum hızı yarıya indirilmişti.
-        // Bu işlemi orijinal fonksiyon zaten yapıyor, biz sadece burada ekstra kontrol yapabiliriz.
+        if (player.ultReady) return;
+        player.ultCharge = Math.min(100, player.ultCharge + amount / 2);
+        if (player.ultCharge >= 100) {
+            player.ultReady = true;
+            if (ultiBtn) ultiBtn.classList.add('ready');
+            addFloatingNumber(player.x, player.y - 40, "GÜÇ HAZIR!", "#f1c40f");
+        }
+        if (ultFill) ultFill.style.width = player.ultCharge + "%";
     });
 
     // ========== KARAKTER KARTI ==========
@@ -266,40 +267,53 @@
             ctx2.restore();
         });
 
-        // Dikenli Kök Bitkisi
+        // Dikenli Kök Bitkisi (saksıda, küçük, kuş bakışı)
         leafPlants.forEach(p => {
             if (p.isDead) return;
             const lifeRatio = Math.max(0, p.life / PLANT_DURATION);
             ctx2.save();
             ctx2.translate(p.x, p.y);
 
-            // Gövde
-            ctx2.fillStyle = '#8B4513';
+            // Saksı (üstten görünüm - daire)
             ctx2.beginPath();
-            ctx2.ellipse(0, 0, p.radius * 0.7, p.radius * 0.9, 0, 0, Math.PI * 2);
+            ctx2.arc(0, 0, p.radius + 6, 0, Math.PI * 2);
+            ctx2.fillStyle = '#8B4513';
             ctx2.fill();
             ctx2.strokeStyle = '#5D3A1A';
             ctx2.lineWidth = 2;
             ctx2.stroke();
 
-            // Dikenler
-            for (let i = 0; i < 6; i++) {
-                const ang = (i / 6) * Math.PI * 2 + Date.now() / 800;
-                const dx = Math.cos(ang) * p.radius * 1.1;
-                const dy = Math.sin(ang) * p.radius * 1.1;
+            // Toprak
+            ctx2.beginPath();
+            ctx2.arc(0, 0, p.radius + 2, 0, Math.PI * 2);
+            ctx2.fillStyle = '#3E2723';
+            ctx2.fill();
+
+            // Bitki gövdesi (küçük)
+            ctx2.fillStyle = '#2E7D32';
+            ctx2.beginPath();
+            ctx2.arc(0, 0, p.radius * 0.7, 0, Math.PI * 2);
+            ctx2.fill();
+
+            // Yapraklar (etrafında)
+            for (let i = 0; i < 4; i++) {
+                const ang = (i / 4) * Math.PI * 2 + Date.now() / 1000;
+                const dx = Math.cos(ang) * (p.radius + 2);
+                const dy = Math.sin(ang) * (p.radius + 2);
                 ctx2.beginPath();
-                ctx2.moveTo(0, 0);
-                ctx2.lineTo(dx, dy);
-                ctx2.strokeStyle = '#2E8B57';
-                ctx2.lineWidth = 3;
+                ctx2.ellipse(dx, dy, 5, 3, ang, 0, Math.PI * 2);
+                ctx2.fillStyle = '#4CAF50';
+                ctx2.fill();
+                ctx2.strokeStyle = '#1B5E20';
+                ctx2.lineWidth = 1;
                 ctx2.stroke();
             }
 
-            // Can barı
+            // Can barı (küçük)
             ctx2.fillStyle = '#e74c3c';
-            ctx2.fillRect(-20, -p.radius - 15, 40, 4);
+            ctx2.fillRect(-14, -p.radius - 12, 28, 3);
             ctx2.fillStyle = '#2ecc71';
-            ctx2.fillRect(-20, -p.radius - 15, 40 * (p.hp / p.maxHp), 4);
+            ctx2.fillRect(-14, -p.radius - 12, 28 * (p.hp / p.maxHp), 3);
 
             ctx2.restore();
         });
@@ -385,25 +399,17 @@
             p.life -= ts;
             p.attackTimer += ts;
 
-            // Bitki süresi doldu veya canı bitti
             if (p.life <= 0 || p.hp <= 0) {
                 explodePlant(p);
                 leafPlants.splice(i, 1);
                 continue;
             }
 
-            // Bitkiye ulti alanı iyileştirmesi
+            // Ulti alanı bitkiyi iyileştirir
             leafZones.forEach(z => {
                 if (getDist(p, z) < z.radius) {
                     p.hp = Math.min(p.maxHp, p.hp + (ULTI_STANDING_HEAL_PER_SEC / 60) * ts);
                 }
-            });
-
-            // Botlar bitkiye saldırabilir: çarpışma ve hasar alma
-            getActiveEnemies().forEach(e => {
-                if (e.isPlant) return;
-                // Botların bitkiye temas hasarı (opsiyonel, yok sayılabilir)
-                // Ama bot mermileri zaten getExtraTargets ile bitkiye çarpar.
             });
 
             // Saldırı: her 1 saniyede bir düşmana yaprak mermisi at
@@ -523,14 +529,19 @@
     }
 
     function explodePlant(p) {
-        spawnParticles(p.x, p.y, '#229954', 'smoke');
-        addFloatingNumber(p.x, p.y, "BİTKİ PATLADI!", "#e74c3c");
+        // Yeşil patlama efekti
+        for (let k = 0; k < 12; k++) {
+            const ang = Math.random() * Math.PI * 2;
+            const dist = Math.random() * 20;
+            spawnParticles(p.x + Math.cos(ang) * dist, p.y + Math.sin(ang) * dist, '#2ecc71', 'normal');
+        }
+        addFloatingNumber(p.x, p.y, "BİTKİ PATLADI!", "#2ecc71");
         explosions.push({x: p.x, y: p.y, radius: 10, maxRadius: 80, life: 15, maxLife: 15});
         getActiveEnemies().forEach(e => {
             const d = getDist(p, e);
             if (d < 100 + e.radius) {
                 e.hp -= PLANT_EXPLOSION_DAMAGE;
-                addFloatingNumber(e.x, e.y, PLANT_EXPLOSION_DAMAGE, "#e74c3c");
+                addFloatingNumber(e.x, e.y, PLANT_EXPLOSION_DAMAGE, "#2ecc71");
                 const angle = getAngle(p, e);
                 e.kbX = Math.cos(angle) * PLANT_EXPLOSION_KNOCKBACK;
                 e.kbY = Math.sin(angle) * PLANT_EXPLOSION_KNOCKBACK;
