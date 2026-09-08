@@ -254,7 +254,72 @@
         oncekiHp = player.maxHp;
     });
 
-    // ---- Draw hook ----
+    // =====================================================
+    // YENİ: Draw sarmalayıcı yerine hook tabanlı çizimler
+    // =====================================================
+
+    // ---- onPreDraw: Nişan çizgisini bastırmak için aimData.active'ı geçici olarak false yap ----
+    chainHook('onPreDraw', function (ctx2) {
+        if (player.charType === CHAR_ID && aimData.active && !player.isDead) {
+            player._tasciAimGeriGetir = true;
+            aimData.active = false;
+        }
+    });
+
+    // ---- onAimDraw: Taşçı nişan çizgisi ve ulti alanı ----
+    chainHook('onAimDraw', function (ctx2) {
+        // Taşçı nişan çizgisi
+        if (player.charType === CHAR_ID && aimData.active && player.ammo >= 1 && !player.isDead) {
+            ctx2.save();
+            ctx2.translate(player.x, player.y);
+            ctx2.rotate(aimData.angle);
+            ctx2.fillStyle = 'rgba(139, 94, 60, 0.15)';
+            ctx2.fillRect(0, -5, TAS_MENZIL, 10);
+            ctx2.strokeStyle = 'rgba(139, 94, 60, 0.8)';
+            ctx2.lineWidth = 2;
+            ctx2.setLineDash([8, 6]);
+            ctx2.strokeRect(0, -5, TAS_MENZIL, 10);
+            ctx2.setLineDash([]);
+            ctx2.beginPath();
+            ctx2.arc(TAS_MENZIL, 0, 8, 0, Math.PI * 2);
+            ctx2.fillStyle = '#8b5e3c';
+            ctx2.fill();
+            ctx2.strokeStyle = '#3e2710';
+            ctx2.lineWidth = 2;
+            ctx2.stroke();
+            ctx2.beginPath();
+            ctx2.arc(TAS_MENZIL, 0, 3, 0, Math.PI * 2);
+            ctx2.fillStyle = '#d4a574';
+            ctx2.fill();
+            ctx2.restore();
+        }
+
+        // Ulti etki alanı göstergesi
+        if (player.charType === CHAR_ID && ultAim.active && player.ultReady && !player.isDead) {
+            ctx2.save();
+            ctx2.translate(player.x, player.y);
+            ctx2.beginPath();
+            ctx2.arc(0, 0, ULTI_YARICAP, 0, Math.PI * 2);
+            ctx2.fillStyle = 'rgba(139, 94, 60, 0.15)';
+            ctx2.fill();
+            ctx2.strokeStyle = 'rgba(139, 94, 60, 0.6)';
+            ctx2.lineWidth = 2;
+            ctx2.setLineDash([10, 5]);
+            ctx2.stroke();
+            ctx2.setLineDash([]);
+            ctx2.restore();
+        }
+    });
+
+    // ---- onPostDraw: aimData.active'ı geri getir ----
+    chainHook('onPostDraw', function (ctx2) {
+        if (player._tasciAimGeriGetir) {
+            aimData.active = true;
+            player._tasciAimGeriGetir = false;
+        }
+    });
+
+    // ---- Draw hook (taş mermileri, parçalar, zırh animasyonu) ----
     chainHook('onDraw', function (ctx2) {
         // Taş Zırh animasyonu (taş halkası)
         if (player.charType === CHAR_ID && player.tasciZirhAnimasyon > 0) {
@@ -503,57 +568,5 @@
             });
         }
     }
-
-    // ---- Nişan çizgisi ----
-    const originalDraw = window.draw;
-    window.draw = function() {
-        if (player.charType === CHAR_ID && aimData.active && player.ammo >= 1 && !player.isDead) {
-            const geciciAimAktif = aimData.active;
-            aimData.active = false;
-            originalDraw();
-            aimData.active = geciciAimAktif;
-
-            ctx.save();
-            ctx.translate(player.x, player.y);
-            ctx.rotate(aimData.angle);
-            ctx.fillStyle = 'rgba(139, 94, 60, 0.15)';
-            ctx.fillRect(0, -5, TAS_MENZIL, 10);
-            ctx.strokeStyle = 'rgba(139, 94, 60, 0.8)';
-            ctx.lineWidth = 2;
-            ctx.setLineDash([8, 6]);
-            ctx.strokeRect(0, -5, TAS_MENZIL, 10);
-            ctx.setLineDash([]);
-            ctx.beginPath();
-            ctx.arc(TAS_MENZIL, 0, 8, 0, Math.PI * 2);
-            ctx.fillStyle = '#8b5e3c';
-            ctx.fill();
-            ctx.strokeStyle = '#3e2710';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.arc(TAS_MENZIL, 0, 3, 0, Math.PI * 2);
-            ctx.fillStyle = '#d4a574';
-            ctx.fill();
-            ctx.restore();
-        } else {
-            originalDraw();
-        }
-
-        // Ulti etki alanı göstergesi
-        if (player.charType === CHAR_ID && ultAim.active && player.ultReady && !player.isDead) {
-            ctx.save();
-            ctx.translate(player.x, player.y);
-            ctx.beginPath();
-            ctx.arc(0, 0, ULTI_YARICAP, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(139, 94, 60, 0.15)';
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(139, 94, 60, 0.6)';
-            ctx.lineWidth = 2;
-            ctx.setLineDash([10, 5]);
-            ctx.stroke();
-            ctx.setLineDash([]);
-            ctx.restore();
-        }
-    };
 
 })();
