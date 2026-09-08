@@ -255,7 +255,7 @@
     });
 
     // =====================================================
-    // YENİ: Draw sarmalayıcı yerine hook tabanlı çizimler
+    // Hook tabanlı çizimler
     // =====================================================
 
     // ---- onPreDraw: Nişan çizgisini bastırmak için aimData.active'ı geçici olarak false yap ----
@@ -268,8 +268,8 @@
 
     // ---- onAimDraw: Taşçı nişan çizgisi ve ulti alanı ----
     chainHook('onAimDraw', function (ctx2) {
-        // Taşçı nişan çizgisi
-        if (player.charType === CHAR_ID && aimData.active && player.ammo >= 1 && !player.isDead) {
+        // Taşçı nişan çizgisi (aimData.active kontrolü KALDIRILDI)
+        if (player.charType === CHAR_ID && player.ammo >= 1 && !player.isDead) {
             ctx2.save();
             ctx2.translate(player.x, player.y);
             ctx2.rotate(aimData.angle);
@@ -568,5 +568,4 @@
             });
         }
     }
-
 })();
