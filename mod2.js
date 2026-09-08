@@ -1,8 +1,8 @@
-// ========== mod2.js (YAPRAKÇI) - GÜNEŞ IŞIĞI TOPLAMA ==========
-// - Aksesuar 1: Güneş Işığı Topla. Bir sonraki atış sarı yaprak olur.
-// - Sarı yaprak: 300 hasar, çarptığı yerde küçük alandaki her düşmana otomatik yaprak fırlatır.
-// - Otomatik yapraklar: yan yaprak gibi 400 hasar.
-// - Ulti dolumu düzeltildi.
+// ========== mod2.js (YAPRAKÇI) - RÜZGAR SAVURMASI ==========
+// - Aksesuar 1: Rüzgar Savurması. Kendi etrafında Ninja alanından %30 daha
+//   büyük bir alandaki tüm botları 30 birim otomatik uzaklaştırır.
+// - Aksesuar 2: Takip Eden Alan (değişmedi).
+// - Ulti dolumu düzeltildi, cooldown göstergesi çalışıyor.
 // - Mimari: hook tabanlı, global override yok.
 
 (function () {
@@ -23,20 +23,21 @@
     const LEAF_HIT_PAD = 8;
     const OBSTACLE_DAMAGE = 30;
 
-    // Güneş Işığı Yeteneği
-    const SUN_LEAF_DAMAGE = 300;                // sarı yaprak hasarı
-    const SUN_LEAF_AOE_RADIUS = 30;             // çarpma alanı yarıçapı (Ninja alanının %25'i)
-    const SUN_LEAF_COOLDOWN = 900;              // gadget bekleme süresi
-    const AUTO_LEAF_DAMAGE = 400;               // otomatik atılan yan yaprak hasarı
+    // Rüzgar Savurması (Aksesuar 1)
+    const WIND_KNOCKBACK_RADIUS = 148;  // Ninja alanı 114 * 1.3 ≈ 148
+    const WIND_KNOCKBACK_FORCE = 30;    // 30 birim itme
+    const WIND_COOLDOWN = 900;          // 15 saniye
 
+    // Takip Eden Alan (Aksesuar 2)
     const FOLLOW_BUFF_DURATION = 900;
     const FOLLOW_GADGET2_COOLDOWN = 1200;
 
+    // Ulti
     const ULTI_ZONE_RADIUS = 96;
     const ULTI_ZONE_DURATION = 480;
     const ULTI_ZONE_DPS = 150;
     const ULTI_SLOW_FACTOR = 0.4;
-    const ULTI_BONUS_DAMAGE = 100;              // ulti alanında bonus hasar
+    const ULTI_BONUS_DAMAGE = 100;
     const ULTI_HIT_HEAL = 50;
     const ULTI_STANDING_HEAL_PER_SEC = 200;
 
@@ -67,8 +68,6 @@
             vx: Math.cos(angle) * LEAF_BULLET_SPEED,
             vy: Math.sin(angle) * LEAF_BULLET_SPEED,
             angle, dmg, age: 0, hitTargets: [],
-            isFromPlant: false,
-            isSunLeaf: options.isSunLeaf || false,
             isAutoLeaf: options.isAutoLeaf || false
         });
     }
@@ -81,16 +80,6 @@
     const originalFire = Player.prototype.fire;
     Player.prototype.fire = function (a, pullOverride) {
         if (this.charType !== CHAR_ID) return originalFire.call(this, a, pullOverride);
-
-        // Güneş Işığı aktif mi?
-        if (this.gunesIsigiHazir) {
-            // Tek sarı yaprak fırlat
-            spawnLeaf(this.x, this.y, a, SUN_LEAF_DAMAGE, { isSunLeaf: true });
-            this.gunesIsigiHazir = false;
-            addFloatingNumber(this.x, this.y - 30, "GÜNEŞ YAPRAĞI!", "#f1c40f");
-            this.consumeAmmo();
-            return;
-        }
 
         const fx = this.x, fy = this.y;
         const perpAngle = a + Math.PI / 2;
@@ -110,19 +99,40 @@
         }, SIDE_DELAY_MS);
     };
 
-    // ========== AKSESUAR 1: GÜNEŞ IŞIĞI TOPLA ==========
+    // ========== AKSESUAR 1: RÜZGAR SAVURMASI ==========
     const originalActivateGadget = Player.prototype.activateGadget;
     Player.prototype.activateGadget = function (a, pull) {
         if (this.charType !== CHAR_ID) return originalActivateGadget.call(this, a, pull);
         if (!this.gadgetReady || this.isDead) return;
 
-        this.gunesIsigiHazir = true;
-        addFloatingNumber(this.x, this.y - 30, "GÜNEŞ IŞIĞI TOPLANDI!", "#f1c40f");
+        // Etki: Etrafındaki tüm düşmanları 30 birim uzağa it
+        const etkilenenler = [];
+        getActiveEnemies().forEach(e => {
+            if (getDist(this, e) <= WIND_KNOCKBACK_RADIUS + e.radius) {
+                const angle = getAngle(this, e);
+                e.kbX = Math.cos(angle) * WIND_KNOCKBACK_FORCE;
+                e.kbY = Math.sin(angle) * WIND_KNOCKBACK_FORCE;
+                etkilenenler.push(e);
+            }
+        });
+
+        if (etkilenenler.length > 0) {
+            addFloatingNumber(this.x, this.y - 40, "RÜZGAR SAVURMASI!", "#229954");
+            // Görsel efekt: yeşil halka
+            explosions.push({x: this.x, y: this.y, radius: 10, maxRadius: WIND_KNOCKBACK_RADIUS, life: 12, maxLife: 12});
+            for (let k = 0; k < 10; k++) {
+                const ang = Math.random() * Math.PI * 2;
+                const dist = Math.random() * WIND_KNOCKBACK_RADIUS * 0.7;
+                spawnParticles(this.x + Math.cos(ang) * dist, this.y + Math.sin(ang) * dist, '#2ecc71', 'smoke');
+            }
+        } else {
+            addFloatingNumber(this.x, this.y - 30, "YAKINDA DÜŞMAN YOK", "#7f8c8d");
+        }
 
         this.gadgetReady = false;
-        this.gadgetCooldown = SUN_LEAF_COOLDOWN;
+        this.gadgetCooldown = WIND_COOLDOWN;
         if (gadgetBtn) gadgetBtn.classList.add('cooldown');
-        if (gadgetTimerText) gadgetTimerText.innerText = Math.ceil(SUN_LEAF_COOLDOWN / 60) + "s";
+        if (gadgetTimerText) gadgetTimerText.innerText = Math.ceil(WIND_COOLDOWN / 60) + "s";
     };
 
     // ========== AKSESUAR 2: TAKİP EDEN ALAN ==========
@@ -183,7 +193,7 @@
         card.innerHTML =
             '<div class="char-color-preview" style="background:' + CHAR_COLOR + ';"></div>' +
             '<span>Yaprakçı</span>' +
-            '<small>Hasar: 500+400x2<br>Güç: Güneş Yaprağı + Alan</small>';
+            '<small>Hasar: 500+400x2<br>Güç: Rüzgar Savurması + Alan</small>';
         charContainer.appendChild(card);
         card.addEventListener('click', () => {
             selectedCharacter = CHAR_ID;
@@ -247,31 +257,12 @@
             ctx2.strokeStyle = '#6b4226'; ctx2.lineWidth = 2; ctx2.stroke();
 
             // Yaprak gövdesi
-            if (b.isSunLeaf) {
-                const leafGrad = ctx2.createLinearGradient(-6, 0, 8, 0);
-                leafGrad.addColorStop(0, '#f1c40f');
-                leafGrad.addColorStop(1, '#f9e79f');
-                ctx2.beginPath(); ctx2.ellipse(2, 0, 9, 5, 0, 0, Math.PI * 2);
-                ctx2.fillStyle = leafGrad; ctx2.fill();
-                ctx2.strokeStyle = '#d4ac0d'; ctx2.lineWidth = 1.5; ctx2.stroke();
-                // Parlama
-                ctx2.beginPath(); ctx2.ellipse(3, 0, 4, 2, 0, 0, Math.PI * 2);
-                ctx2.fillStyle = 'rgba(255,255,255,0.7)'; ctx2.fill();
-            } else if (b.isAutoLeaf) {
-                const leafGrad = ctx2.createLinearGradient(-6, 0, 8, 0);
-                leafGrad.addColorStop(0, '#27ae60');
-                leafGrad.addColorStop(1, '#2ecc71');
-                ctx2.beginPath(); ctx2.ellipse(2, 0, 9, 5, 0, 0, Math.PI * 2);
-                ctx2.fillStyle = leafGrad; ctx2.fill();
-                ctx2.strokeStyle = '#145a32'; ctx2.lineWidth = 1.5; ctx2.stroke();
-            } else {
-                const leafGrad = ctx2.createLinearGradient(-6, 0, 8, 0);
-                leafGrad.addColorStop(0, '#1e8449');
-                leafGrad.addColorStop(1, '#2ecc71');
-                ctx2.beginPath(); ctx2.ellipse(2, 0, 9, 5, 0, 0, Math.PI * 2);
-                ctx2.fillStyle = leafGrad; ctx2.fill();
-                ctx2.strokeStyle = '#145a32'; ctx2.lineWidth = 1.5; ctx2.stroke();
-            }
+            const leafGrad = ctx2.createLinearGradient(-6, 0, 8, 0);
+            leafGrad.addColorStop(0, '#1e8449');
+            leafGrad.addColorStop(1, '#2ecc71');
+            ctx2.beginPath(); ctx2.ellipse(2, 0, 9, 5, 0, 0, Math.PI * 2);
+            ctx2.fillStyle = leafGrad; ctx2.fill();
+            ctx2.strokeStyle = '#145a32'; ctx2.lineWidth = 1.5; ctx2.stroke();
 
             // Damar
             ctx2.beginPath(); ctx2.moveTo(-6, 0); ctx2.lineTo(10, 0);
@@ -296,15 +287,19 @@
             if (gadgetBtn2) gadgetBtn2.style.display = 'flex';
             if (ultiBtn) ultiBtn.style.display = 'flex';
 
+            // Buton etiketlerini sadece bir kez ayarla
             if (gadgetBtn && gadgetBtn.dataset.yaprakLabelSet !== '1') {
-                gadgetBtn.innerHTML = 'GÜNEŞ<br>IŞIĞI TOPLA<br><span id="gadget-timer"></span>';
+                gadgetBtn.innerHTML = 'RÜZGAR<br>SAVURMA<br><span id="gadget-timer"></span>';
                 gadgetBtn.dataset.yaprakLabelSet = '1';
+                gadgetTimerText = document.getElementById('gadget-timer'); // Referansı güncelle
             }
             if (gadgetBtn2 && gadgetBtn2.dataset.yaprakLabelSet !== '1') {
                 gadgetBtn2.innerHTML = 'TAKİP<br>EDEN ALAN<br><span id="gadget-timer-2"></span>';
                 gadgetBtn2.dataset.yaprakLabelSet = '1';
+                gadgetTimerText2 = document.getElementById('gadget-timer-2'); // Referansı güncelle
             }
 
+            // Cooldown göstergeleri
             if (player.gadgetCooldown > 0) {
                 if (gadgetTimerText) gadgetTimerText.innerText = Math.ceil(player.gadgetCooldown / 60) + "s";
                 gadgetBtn.classList.add('cooldown');
@@ -319,27 +314,9 @@
                 if (gadgetTimerText2) gadgetTimerText2.innerText = "";
                 gadgetBtn2.classList.remove('cooldown');
             }
-
-            // Güneş ışığı göstergesi
-            if (player.gunesIsigiHazir) {
-                if (!document.getElementById('gunes-gostergesi')) {
-                    const gosterge = document.createElement('div');
-                    gosterge.id = 'gunes-gostergesi';
-                    gosterge.style.cssText = `
-                        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-                        width: 40px; height: 40px; border-radius: 50%;
-                        background: radial-gradient(circle, #f1c40f, #f9e79f);
-                        box-shadow: 0 0 25px #f1c40f;
-                        z-index: 40; pointer-events: none;
-                    `;
-                    document.body.appendChild(gosterge);
-                }
-            } else {
-                const gosterge = document.getElementById('gunes-gostergesi');
-                if (gosterge) gosterge.remove();
-            }
         }
 
+        // Takip eden alan buff süresi
         if (player.charType === CHAR_ID && player.kFollowUltiBuff) {
             player.kFollowUltiBuffTimer -= 1;
             if (player.kFollowUltiBuffTimer <= 0) {
@@ -413,45 +390,6 @@
             if (hitObstacle) { leafBullets.splice(i, 1); continue; }
 
             const inZone = playerInOwnZone();
-
-            // Sarı yaprak özel davranışı
-            if (b.isSunLeaf) {
-                let hitEnemy = null;
-                for (const e of getActiveEnemies()) {
-                    if (getDist(b, e) < e.radius + LEAF_HIT_PAD) {
-                        hitEnemy = e;
-                        break;
-                    }
-                }
-                if (hitEnemy) {
-                    // Sarı yaprak hasarı
-                    hitEnemy.hp -= b.dmg;
-                    addFloatingNumber(hitEnemy.x, hitEnemy.y, b.dmg, "#f1c40f");
-                    hitEnemy.kbX = (hitEnemy.kbX || 0) + Math.cos(b.angle) * KNOCKBACK_MAG;
-                    hitEnemy.kbY = (hitEnemy.kbY || 0) + Math.sin(b.angle) * KNOCKBACK_MAG;
-
-                    // Çarpma noktasındaki alan etkisi: her düşmana otomatik yaprak
-                    getActiveEnemies().forEach(hedef => {
-                        if (hedef === hitEnemy) return;
-                        if (getDist(b, hedef) < SUN_LEAF_AOE_RADIUS + hedef.radius) {
-                            const autoAngle = getAngle(b, hedef);
-                            spawnLeaf(b.x, b.y, autoAngle, AUTO_LEAF_DAMAGE, { isAutoLeaf: true });
-                            addFloatingNumber(hedef.x, hedef.y - 10, "OTOMATİK YAPRAK!", "#27ae60");
-                        }
-                    });
-
-                    // Patlama efekti
-                    spawnParticles(b.x, b.y, '#f1c40f', 'normal');
-                    explosions.push({x: b.x, y: b.y, radius: 5, maxRadius: 30, life: 10, maxLife: 10});
-
-                    leafBullets.splice(i, 1);
-                    continue;
-                }
-                // Çarpmadıysa normal akış devam etsin
-                continue;
-            }
-
-            // Normal ve otomatik yapraklar
             if (inZone) {
                 for (const e of getActiveEnemies()) {
                     if (b.hitTargets.includes(e)) continue;
@@ -462,10 +400,8 @@
                         addFloatingNumber(e.x, e.y - 6, totalDmg, "#27ae60");
                         e.kbX = (e.kbX || 0) + Math.cos(b.angle) * KNOCKBACK_MAG;
                         e.kbY = (e.kbY || 0) + Math.sin(b.angle) * KNOCKBACK_MAG;
-                        if (!b.isAutoLeaf) {
-                            player.hp = Math.min(player.maxHp, player.hp + ULTI_HIT_HEAL);
-                            addFloatingNumber(player.x, player.y, "+" + ULTI_HIT_HEAL, "#2ecc71");
-                        }
+                        player.hp = Math.min(player.maxHp, player.hp + ULTI_HIT_HEAL);
+                        addFloatingNumber(player.x, player.y, "+" + ULTI_HIT_HEAL, "#2ecc71");
                         leafBullets.splice(i, 1);
                         break;
                     }
