@@ -86,9 +86,6 @@
     };
 
     // ========== ÇİZİM SARMALAYICI (DRAW WRAPPER) ==========
-    // window.draw fonksiyonunu güvenli şekilde sarmalar.
-    // Modlar artık window.draw'u ezmek yerine hook'lara bağlanır.
-    // Hook sırası: onPreDraw -> orijinal draw -> onAimDraw -> onDraw -> onPostDraw
     function wrapDrawFunction() {
         if (typeof window.draw !== 'function') {
             console.warn('core.js: window.draw bulunamadı, çizim sarmalayıcı kurulmadı.');
@@ -106,17 +103,17 @@
             // 2) Ana çizim
             originalDraw();
 
-            // 3) Nişan çizimi hook'u (ana çizimden hemen sonra, nişan çizgileri için)
+            // 3) Nişan çizimi hook'u
             if (typeof window.GAME_EXT.hooks.onAimDraw === 'function') {
                 window.GAME_EXT.hooks.onAimDraw(ctx);
             }
 
-            // 4) Genel çizim hook'u (ekstra çizimler için)
+            // 4) Genel çizim hook'u
             if (typeof window.GAME_EXT.hooks.onDraw === 'function') {
                 window.GAME_EXT.hooks.onDraw(ctx);
             }
 
-            // 5) Çizim sonrası hook (temizlik veya ek efektler için)
+            // 5) Çizim sonrası hook
             if (typeof window.GAME_EXT.hooks.onPostDraw === 'function') {
                 window.GAME_EXT.hooks.onPostDraw(ctx);
             }
@@ -125,14 +122,62 @@
         console.log('core.js: window.draw sarmalayıcısı kuruldu.');
     }
 
+    // ========== GÜNCELLEME SARMALAYICI (UPDATE WRAPPER) ==========
+    function wrapUpdateFunction() {
+        if (typeof window.update !== 'function') {
+            console.warn('core.js: window.update bulunamadı, güncelleme sarmalayıcı kurulmadı.');
+            return;
+        }
+
+        const originalUpdate = window.update;
+
+        window.update = function (ts) {
+            // 1) Orijinal güncellemeyi çalıştır
+            originalUpdate(ts);
+
+            // 2) onUpdate hook'unu tetikle
+            if (typeof window.GAME_EXT.hooks.onUpdate === 'function') {
+                window.GAME_EXT.hooks.onUpdate(ts);
+            }
+        };
+
+        console.log('core.js: window.update sarmalayıcısı kuruldu.');
+    }
+
+    // ========== ULTİ DOLDURMA SARMALAYICI (CHARGE ULTI WRAPPER) ==========
+    function wrapChargeUltiFunction() {
+        if (typeof window.chargeUlti !== 'function') {
+            console.warn('core.js: window.chargeUlti bulunamadı, ulti dolum sarmalayıcı kurulmadı.');
+            return;
+        }
+
+        const originalChargeUlti = window.chargeUlti;
+
+        window.chargeUlti = function (amount) {
+            // 1) Orijinal dolumu çağır
+            originalChargeUlti(amount);
+
+            // 2) onChargeUlti hook'unu tetikle
+            if (typeof window.GAME_EXT.hooks.onChargeUlti === 'function') {
+                window.GAME_EXT.hooks.onChargeUlti(amount);
+            }
+        };
+
+        console.log('core.js: window.chargeUlti sarmalayıcısı kuruldu.');
+    }
+
     // ========== Varsayılan Hook'ları Tanımla ==========
     window.GAME_EXT.hooks.onPreDraw = window.GAME_EXT.hooks.onPreDraw || function () {};
     window.GAME_EXT.hooks.onAimDraw = window.GAME_EXT.hooks.onAimDraw || function () {};
     window.GAME_EXT.hooks.onDraw = window.GAME_EXT.hooks.onDraw || function () {};
     window.GAME_EXT.hooks.onPostDraw = window.GAME_EXT.hooks.onPostDraw || function () {};
+    window.GAME_EXT.hooks.onUpdate = window.GAME_EXT.hooks.onUpdate || function () {};
+    window.GAME_EXT.hooks.onChargeUlti = window.GAME_EXT.hooks.onChargeUlti || function () {};
 
-    // ========== Draw Sarmalayıcıyı Kur ==========
+    // ========== Sarmalayıcıları Kur ==========
     wrapDrawFunction();
+    wrapUpdateFunction();
+    wrapChargeUltiFunction();
 
     console.log('core.js yüklendi: Merkezi kayıt ve olay sistemi hazır.');
 })();
