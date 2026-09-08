@@ -69,8 +69,6 @@
     };
 
     // ========== ZİNCİRLEME HOOK YARDIMCISI ==========
-    // Modüller kendi çizim/güncelleme işlevlerini bu hook'lara ekler.
-    // Böylece birden fazla modül aynı hook'u kullanabilir.
     window.GAME_EXT.chainHook = function (hookName, fn) {
         if (!window.GAME_EXT.hooks) window.GAME_EXT.hooks = {};
         const prev = window.GAME_EXT.hooks[hookName];
@@ -86,6 +84,55 @@
             return ownResult !== undefined ? ownResult : prevResult;
         };
     };
+
+    // ========== ÇİZİM SARMALAYICI (DRAW WRAPPER) ==========
+    // window.draw fonksiyonunu güvenli şekilde sarmalar.
+    // Modlar artık window.draw'u ezmek yerine hook'lara bağlanır.
+    // Hook sırası: onPreDraw -> orijinal draw -> onAimDraw -> onDraw -> onPostDraw
+    function wrapDrawFunction() {
+        if (typeof window.draw !== 'function') {
+            console.warn('core.js: window.draw bulunamadı, çizim sarmalayıcı kurulmadı.');
+            return;
+        }
+
+        const originalDraw = window.draw;
+
+        window.draw = function () {
+            // 1) Çizim öncesi hook
+            if (typeof window.GAME_EXT.hooks.onPreDraw === 'function') {
+                window.GAME_EXT.hooks.onPreDraw(ctx);
+            }
+
+            // 2) Ana çizim
+            originalDraw();
+
+            // 3) Nişan çizimi hook'u (ana çizimden hemen sonra, nişan çizgileri için)
+            if (typeof window.GAME_EXT.hooks.onAimDraw === 'function') {
+                window.GAME_EXT.hooks.onAimDraw(ctx);
+            }
+
+            // 4) Genel çizim hook'u (ekstra çizimler için)
+            if (typeof window.GAME_EXT.hooks.onDraw === 'function') {
+                window.GAME_EXT.hooks.onDraw(ctx);
+            }
+
+            // 5) Çizim sonrası hook (temizlik veya ek efektler için)
+            if (typeof window.GAME_EXT.hooks.onPostDraw === 'function') {
+                window.GAME_EXT.hooks.onPostDraw(ctx);
+            }
+        };
+
+        console.log('core.js: window.draw sarmalayıcısı kuruldu.');
+    }
+
+    // ========== Varsayılan Hook'ları Tanımla ==========
+    window.GAME_EXT.hooks.onPreDraw = window.GAME_EXT.hooks.onPreDraw || function () {};
+    window.GAME_EXT.hooks.onAimDraw = window.GAME_EXT.hooks.onAimDraw || function () {};
+    window.GAME_EXT.hooks.onDraw = window.GAME_EXT.hooks.onDraw || function () {};
+    window.GAME_EXT.hooks.onPostDraw = window.GAME_EXT.hooks.onPostDraw || function () {};
+
+    // ========== Draw Sarmalayıcıyı Kur ==========
+    wrapDrawFunction();
 
     console.log('core.js yüklendi: Merkezi kayıt ve olay sistemi hazır.');
 })();
