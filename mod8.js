@@ -8,31 +8,31 @@
     const MOD_ID = 'buzul';
 
     // ========== Buz Slime ==========
-    const SLIME_HP =600;
+    const SLIME_HP =300;
     const SLIME_SPEED = 2.0;
     const SLIME_RADIUS = 12;
-    const SLIME_DAMAGE = 150;
+    const SLIME_DAMAGE = 100;
 
     // ========== Orta Buz Slime ==========
-    const ORTA_SLIME_HP = 900;
+    const ORTA_SLIME_HP = 600;
     const ORTA_SLIME_SPEED = 1.8;
     const ORTA_SLIME_RADIUS = 18;
-    const ORTA_SLIME_DAMAGE = 200;
-    const ORTA_SLIME_MENZIL = 430;
+    const ORTA_SLIME_DAMAGE = 100;
+    const ORTA_SLIME_MENZIL = 220;
     const ORTA_SLIME_ATIS_INTERVAL = 1500;
     const ORTA_SLIME_MAX_MERMI = 3;
 
     // ========== Büyük Buz Slime ==========
-    const BUYUK_SLIME_HP = 1800;
-    const BUYUK_SLIME_SPEED = 1.5;
+    const BUYUK_SLIME_HP = 900;
+    const BUYUK_SLIME_SPEED = 1.8;
     const BUYUK_SLIME_RADIUS = 25;
-    const BUYUK_SLIME_DAMAGE = 250;
+    const BUYUK_SLIME_DAMAGE = 500;
 
     // ========== Buz Botu ==========
-    const BUZ_BOT_HP = 4200;
-    const BUZ_BOT_SPEED = 0.8;
+    const BUZ_BOT_HP = 4000;
+    const BUZ_BOT_SPEED = 0.9;
     const BUZ_BOT_RADIUS = 22;
-    const BUZ_BOT_TEMAS_HASAR = 400;
+    const BUZ_BOT_TEMAS_HASAR = 450;
     const BUZ_BOT_ITME_MESAFE = 40;
     const BUZ_BOT_PATLAMA_YARICAP = 68;
     const BUZ_BOT_PATLAMA_HASAR = 150;
@@ -42,36 +42,36 @@
     const BUZ_BOT_VURUS_ANIM = 12;
 
     // ========== Buz Ciritçisi ==========
-    const CIRITCI_HP = 2200;
+    const CIRITCI_HP = 2000;
     const CIRITCI_SPEED = 0.8;
     const CIRITCI_RADIUS = 18;
-    const CIRITCI_SHOOT_RANGE = 240;
-    const CIRITCI_SHOOT_INTERVAL = 1500;
-    const CIRITCI_DAMAGE = 430;
-    const CIRITCI_RESPAWN_TIME = 390;
+    const CIRITCI_SHOOT_RANGE = 220;
+    const CIRITCI_SHOOT_INTERVAL = 1200;
+    const CIRITCI_DAMAGE = 450;
+    const CIRITCI_RESPAWN_TIME = 300;
     const CIRITCI_SPAWN_WARN = 90;
-    const CIRITCI_MERMI_HIZ = BOT_BULLET_SPEED * 1.13;
+    const CIRITCI_MERMI_HIZ = BOT_BULLET_SPEED * 1.16;
 
     // ========== Heykel Tıraşı ==========
-    const HEYKEL_TIRASI_HP = 1700;
+    const HEYKEL_TIRASI_HP = 1300;
     const HEYKEL_TIRASI_SPEED = 0.5;
     const HEYKEL_TIRASI_RADIUS = 18;
     const HEYKEL_TIRASI_MENZIL = 140;
-    const HEYKEL_TIRASI_HASAR = 200;
-    const HEYKEL_TIRASI_SPAWN_INTERVAL = 1200;
-    const HEYKEL_TIRASI_SPAWN_WARN = 180;
-    const HEYKEL_INSAA_SURESI = 300;
-    const HEYKEL_ILK_INSAA_SURESI = 240;
+    const HEYKEL_TIRASI_HASAR = 150;
+    const HEYKEL_TIRASI_SPAWN_INTERVAL = 1400;
+    const HEYKEL_TIRASI_SPAWN_WARN = 90;
+    const HEYKEL_INSAA_SURESI = 280;
+    const HEYKEL_ILK_INSAA_SURESI = 220;
 
     // ========== Heykel ==========
-    const HEYKEL_HP = 9000;
+    const HEYKEL_HP = 9500;
     const HEYKEL_SPEED = 0.6;
     const HEYKEL_RADIUS = 30;
-    const HEYKEL_SALDIRI_HASAR = 20;
+    const HEYKEL_SALDIRI_HASAR = 30;
     const HEYKEL_ITME_MESAFE = 25;
     const HEYKEL_SALDIRI_MENZIL = 25;
-    const HEYKEL_SALDIRI_ARALIK = 100;
-    const HEYKEL_PASIF_CAN_KAYBI = 300;
+    const HEYKEL_SALDIRI_ARALIK = 90;
+    const HEYKEL_PASIF_CAN_KAYBI = 200;
     const HEYKEL_PASIF_KAYIP_ARALIK = 180;
     const HEYKEL_IYILESTIRME = 100;
 
@@ -79,14 +79,14 @@
     const BOGA_HP = 10000;
     const BOGA_NORMAL_HIZ = 0.5;
     const BOGA_KOSMA_HIZ = 10.8;
-    const BOGA_BEKLEME_SURE = 60;
-    const BOGA_SARJ_SURE = 50;
-    const BOGA_OFKE_SURE = 70;
-    const BOGA_TEMAS_HASAR = 600;
-    const BOGA_ITME_MESAFE = 85;
-    const BOGA_SERSEMLE_SURE = 50;
-    const BOGA_SPAWN_INTERVAL = 2000;
-    const BOGA_SPAWN_WARN = 360;
+    const BOGA_BEKLEME_SURE = 80;
+    const BOGA_SARJ_SURE = 80;
+    const BOGA_OFKE_SURE = 90;
+    const BOGA_TEMAS_HASAR = 700;
+    const BOGA_ITME_MESAFE = 25;
+    const BOGA_SERSEMLE_SURE = 60;
+    const BOGA_SPAWN_INTERVAL = 2300;
+    const BOGA_SPAWN_WARN = 480;
 
     // ========== Değişkenler ==========
     let buzSlimeLari = [];
