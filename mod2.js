@@ -1,8 +1,11 @@
-// ========== mod2.js (YAPRAKÇI) - YENİDEN YAZILMIŞ, HEDEF GÖSTERGELİ ==========
-// - Tüm çizimler hook ile yapılır (diğer modüller bozulmaz).
-// - Mermiler ana oyun döngüsüne bağlıdır (requestAnimationFrame çakışması yok).
-// - Zıplama aksesuarı: butona basılı tutup sürükleyince hedef noktası gösterilir,
-//   bırakınca oraya ışınlanır. Gölge'nin sıçrayışındaki gibi iniş yeri işareti vardır.
+// ========== mod2.js (YAPRAKÇI) - DİKENLİ KÖK BİTKİSİ ==========
+// - Zıplama kaldırıldı, yerine bitki çağırma geldi.
+// - Bitki düşman mermilerini engeller, botlar bitkiyi hedef alır.
+// - Bitki her saniyede 1 yaprak mermisi atar, her atışta 100 can kaybeder.
+// - Ulti bitkiyi iyileştirir.
+// - Bitki yok edilince çevreye hasar ve güçlü itme uygular.
+// - Ulti bonus hasarı 100'e düşürüldü, mermiler ikinci kez vurmaz.
+// - Tüm güncellemeler hook'lara bağlandı (window.update/chargeUlti override yok).
 
 (function () {
     'use strict';
@@ -22,10 +25,17 @@
     const LEAF_HIT_PAD = 8;
     const OBSTACLE_DAMAGE = 30;
 
-    const JUMP_DAMAGE = 100;
-    const JUMP_KNOCKBACK = 0;
-    const JUMP_DURATION = 40;
-    const JUMP_COOLDOWN_FRAMES = 900;
+    // Dikenli Kök Bitkisi
+    const PLANT_MAX_HP = 800;             // başlangıç canı
+    const PLANT_DURATION = 600;           // 600 frame ≈ 10 saniye
+    const PLANT_ATTACK_INTERVAL = 60;     // 1 saniyede 1 atış (60 frame)
+    const PLANT_DAMAGE = 500;             // yaprakçının orta mermisiyle aynı
+    const PLANT_ATTACK_RADIUS = 300;      // bitki bu menzilde düşman görürse ateş eder
+    const PLANT_RADIUS = 40;              // bitki gövde yarıçapı
+    const PLANT_SELF_DAMAGE_PER_SHOT = 100; // her atışta kaybettiği can
+    const PLANT_EXPLOSION_DAMAGE = 150;   // yok olunca verdiği hasar
+    const PLANT_EXPLOSION_KNOCKBACK = 40; // itme gücü (Buz Botu benzeri)
+    const PLANT_COOLDOWN = 900;           // gadget bekleme süresi
 
     const FOLLOW_BUFF_DURATION = 900;
     const FOLLOW_GADGET2_COOLDOWN = 1200;
@@ -34,7 +44,7 @@
     const ULTI_ZONE_DURATION = 480;
     const ULTI_ZONE_DPS = 150;
     const ULTI_SLOW_FACTOR = 0.4;
-    const ULTI_BONUS_DAMAGE = 300;
+    const ULTI_BONUS_DAMAGE = 100;        // eski 300'den düşürüldü
     const ULTI_HIT_HEAL = 50;
     const ULTI_STANDING_HEAL_PER_SEC = 200;
 
@@ -44,11 +54,7 @@
 
     let leafBullets = [];
     let leafZones = [];
-    let yaprakAimActive = false;
-    let yaprakAimStartX = 0;
-    let yaprakAimStartY = 0;
-    let yaprakAimAngle = 0;
-    let yaprakAimPull = 1;
+    let leafPlants = [];   // aktif bitkiler (maks 1)
     let wasJumping = false;
 
     function chainHook(name, fn) {
@@ -64,12 +70,13 @@
         };
     }
 
-    function spawnLeaf(x, y, angle, dmg) {
+    function spawnLeaf(x, y, angle, dmg, isFromPlant = false) {
         leafBullets.push({
             x, y, sx: x, sy: y,
             vx: Math.cos(angle) * LEAF_BULLET_SPEED,
             vy: Math.sin(angle) * LEAF_BULLET_SPEED,
-            angle, dmg, age: 0, hitTargets: []
+            angle, dmg, age: 0, hitTargets: [],
+            isFromPlant: isFromPlant
         });
     }
 
@@ -85,7 +92,7 @@
         const fx = this.x, fy = this.y;
         const perpAngle = a + Math.PI / 2;
 
-        spawnLeaf(fx, fy, a, MID_DAMAGE);
+        spawnLeaf(fx, fy, a, MID_DAMAGE, false);
         this.consumeAmmo();
 
         setTimeout(() => {
@@ -94,36 +101,41 @@
                 spawnLeaf(
                     fx + Math.cos(perpAngle) * off,
                     fy + Math.sin(perpAngle) * off,
-                    a, SIDE_DAMAGE
+                    a, SIDE_DAMAGE, false
                 );
             });
         }, SIDE_DELAY_MS);
     };
 
-    // ========== AKSESUAR 1: YAPRAK SIÇRAYIŞI (hedef göstergeli) ==========
+    // ========== AKSESUAR 1: Dikenli Kök Bitkisi ==========
     const originalActivateGadget = Player.prototype.activateGadget;
     Player.prototype.activateGadget = function (a, pull) {
         if (this.charType !== CHAR_ID) return originalActivateGadget.call(this, a, pull);
-        if (!this.gadgetReady || this.isDead || this.isJumping) return;
+        if (!this.gadgetReady || this.isDead) return;
+        if (leafPlants.length >= 1) {
+            addFloatingNumber(this.x, this.y - 30, "ZATEN BİR BİTKİ VAR!", "#e74c3c");
+            return;
+        }
 
-        let pullMag = pull !== undefined ? Math.max(0, Math.min(1, pull)) : 1;
-        const maxDist = RANGE * 0.65;
-        const dist = Math.max(60, maxDist * pullMag);
-        const angle = a !== undefined ? a : this.angle;
-        const tx = clampPos(this.x + Math.cos(angle) * dist, WALL_THICKNESS + this.radius + 5, canvas.width - WALL_THICKNESS - this.radius - 5);
-        const ty = clampPos(this.y + Math.sin(angle) * dist, WALL_THICKNESS + this.radius + 5, canvas.height - WALL_THICKNESS - this.radius - 5);
-
-        this.isJumping = true; this.jumpInvulnerable = true;
-        this.jumpStartX = this.x; this.jumpStartY = this.y;
-        this.jumpTargetX = tx; this.jumpTargetY = ty;
-        this.jumpProgress = 0; this.jumpDuration = JUMP_DURATION;
-        this.jumpDamage = JUMP_DAMAGE; this.jumpKnockback = JUMP_KNOCKBACK; this.jumpLabel = "YAPRAK SIÇRAYIŞI!";
-        spawnParticles(this.x, this.y, '#229954', 'smoke');
+        // Bitkiyi oyuncunun biraz önüne dik (veya direkt üzerine)
+        const plantX = this.x + Math.cos(this.angle) * 30;
+        const plantY = this.y + Math.sin(this.angle) * 30;
+        leafPlants.push({
+            x: plantX, y: plantY,
+            radius: PLANT_RADIUS,
+            hp: PLANT_MAX_HP,
+            maxHp: PLANT_MAX_HP,
+            life: PLANT_DURATION,
+            attackTimer: 0,
+            isDead: false,
+            age: 0
+        });
+        addFloatingNumber(plantX, plantY - 20, "DİKENLİ KÖK BİTKİSİ!", "#229954");
 
         this.gadgetReady = false;
-        this.gadgetCooldown = JUMP_COOLDOWN_FRAMES;
+        this.gadgetCooldown = PLANT_COOLDOWN;
         if (gadgetBtn) gadgetBtn.classList.add('cooldown');
-        if (gadgetTimerText) gadgetTimerText.innerText = Math.ceil(JUMP_COOLDOWN_FRAMES / 60) + "s";
+        if (gadgetTimerText) gadgetTimerText.innerText = Math.ceil(PLANT_COOLDOWN / 60) + "s";
     };
 
     // ========== AKSESUAR 2: TAKİP EDEN ALAN ==========
@@ -162,22 +174,13 @@
         if (ultiBtn) ultiBtn.classList.remove('ready');
     };
 
-    // ========== CHARGE ULTİ (zincirleme) ==========
-    const originalChargeUlti = window.chargeUlti;
-    window.chargeUlti = function (amount) {
-        if (player.charType === CHAR_ID) {
-            if (!gameStarted || player.ultReady) return;
-            player.ultCharge = Math.min(100, player.ultCharge + amount / 2);
-            if (player.ultCharge === 100) {
-                player.ultReady = true;
-                if (ultiBtn) ultiBtn.classList.add('ready');
-                addFloatingNumber(player.x, player.y - 40, "GÜÇ HAZIR!", "#f1c40f");
-            }
-            if (ultFill) ultFill.style.width = player.ultCharge + "%";
-        } else {
-            return originalChargeUlti(amount);
-        }
-    };
+    // ========== ULTİ DOLDURMA (hook ile) ==========
+    chainHook('onChargeUlti', function (amount) {
+        if (player.charType !== CHAR_ID) return;
+        // Orijinal chargeUlti zaten çalıştı, burada ekstra işlem yapmaya gerek yok.
+        // Ama Yaprakçı için ulti dolum hızı yarıya indirilmişti.
+        // Bu işlemi orijinal fonksiyon zaten yapıyor, biz sadece burada ekstra kontrol yapabiliriz.
+    });
 
     // ========== KARAKTER KARTI ==========
     const charContainer = document.querySelector('.char-select-container');
@@ -188,7 +191,7 @@
         card.innerHTML =
             '<div class="char-color-preview" style="background:' + CHAR_COLOR + ';"></div>' +
             '<span>Yaprakçı</span>' +
-            '<small>Hasar: 500+400x2<br>Güç: Sıçrayış+Alan</small>';
+            '<small>Hasar: 500+400x2<br>Güç: Dikenli Kök + Alan</small>';
         charContainer.appendChild(card);
         card.addEventListener('click', () => {
             selectedCharacter = CHAR_ID;
@@ -201,48 +204,12 @@
     chainHook('onReset', function () {
         leafBullets = [];
         leafZones = [];
-        yaprakAimActive = false;
+        leafPlants = [];
     });
 
-    // ========== HOOK: DRAW (hedef göstergesi, ulti alanı, mermiler) ==========
+    // ========== HOOK: DRAW ==========
     chainHook('onDraw', function (ctx2) {
         if (player.charType !== CHAR_ID) return;
-
-        // Zıplama nişanı hedef göstergesi
-        if (yaprakAimActive && !player.isDead && player.gadgetReady) {
-            ctx2.save();
-            ctx2.translate(player.x, player.y);
-            ctx2.rotate(yaprakAimAngle);
-            const maxDist = RANGE * 0.65;
-            const dist = Math.max(60, maxDist * yaprakAimPull);
-
-            // Çizgi
-            ctx2.beginPath(); ctx2.moveTo(0, 0); ctx2.lineTo(dist, 0);
-            ctx2.strokeStyle = 'rgba(34, 153, 84, 0.7)'; ctx2.lineWidth = 3; ctx2.setLineDash([8, 6]);
-            ctx2.stroke(); ctx2.setLineDash([]);
-
-            // Hedef nokta (iniş yeri işareti)
-            const tx = clampPos(player.x + Math.cos(yaprakAimAngle) * dist, WALL_THICKNESS + player.radius + 5, canvas.width - WALL_THICKNESS - player.radius - 5);
-            const ty = clampPos(player.y + Math.sin(yaprakAimAngle) * dist, WALL_THICKNESS + player.radius + 5, canvas.height - WALL_THICKNESS - player.radius - 5);
-            const hedefX = tx - player.x;
-            const hedefY = ty - player.y;
-
-            ctx2.translate(hedefX, hedefY);
-            ctx2.rotate(-yaprakAimAngle);
-            // Daire
-            ctx2.beginPath(); ctx2.arc(0, 0, 12, 0, Math.PI * 2);
-            ctx2.strokeStyle = 'rgba(34, 153, 84, 0.9)'; ctx2.lineWidth = 2; ctx2.stroke();
-            // İç nokta
-            ctx2.beginPath(); ctx2.arc(0, 0, 3, 0, Math.PI * 2);
-            ctx2.fillStyle = 'rgba(34, 153, 84, 0.9)'; ctx2.fill();
-            // Parlama
-            ctx2.shadowColor = '#2ecc71'; ctx2.shadowBlur = 8;
-            ctx2.beginPath(); ctx2.arc(0, 0, 12, 0, Math.PI * 2);
-            ctx2.strokeStyle = 'rgba(46, 204, 113, 0.7)'; ctx2.lineWidth = 1.5; ctx2.stroke();
-            ctx2.shadowBlur = 0;
-
-            ctx2.restore();
-        }
 
         // Ulti alanları
         leafZones.forEach(z => {
@@ -298,68 +265,74 @@
 
             ctx2.restore();
         });
+
+        // Dikenli Kök Bitkisi
+        leafPlants.forEach(p => {
+            if (p.isDead) return;
+            const lifeRatio = Math.max(0, p.life / PLANT_DURATION);
+            ctx2.save();
+            ctx2.translate(p.x, p.y);
+
+            // Gövde
+            ctx2.fillStyle = '#8B4513';
+            ctx2.beginPath();
+            ctx2.ellipse(0, 0, p.radius * 0.7, p.radius * 0.9, 0, 0, Math.PI * 2);
+            ctx2.fill();
+            ctx2.strokeStyle = '#5D3A1A';
+            ctx2.lineWidth = 2;
+            ctx2.stroke();
+
+            // Dikenler
+            for (let i = 0; i < 6; i++) {
+                const ang = (i / 6) * Math.PI * 2 + Date.now() / 800;
+                const dx = Math.cos(ang) * p.radius * 1.1;
+                const dy = Math.sin(ang) * p.radius * 1.1;
+                ctx2.beginPath();
+                ctx2.moveTo(0, 0);
+                ctx2.lineTo(dx, dy);
+                ctx2.strokeStyle = '#2E8B57';
+                ctx2.lineWidth = 3;
+                ctx2.stroke();
+            }
+
+            // Can barı
+            ctx2.fillStyle = '#e74c3c';
+            ctx2.fillRect(-20, -p.radius - 15, 40, 4);
+            ctx2.fillStyle = '#2ecc71';
+            ctx2.fillRect(-20, -p.radius - 15, 40 * (p.hp / p.maxHp), 4);
+
+            ctx2.restore();
+        });
     });
 
-    // ========== ANA OYUN DÖNGÜSÜNE BAĞLANMA (mermi hareketi garantisi) ==========
-    const originalUpdate = window.update;
-    window.update = function(ts) {
-        originalUpdate(ts);
-        if (gameStarted && player.charType === CHAR_ID) {
-            leafUpdate(ts);
-            ensureLeafUI(ts);
-        }
-    };
+    // ========== HOOK: UPDATE ==========
+    chainHook('onUpdate', function (ts) {
+        if (player.charType !== CHAR_ID) return;
+        leafUpdate(ts);
+        ensureLeafUI();
+    });
 
-    // ========== NİŞAN ALMA (butonla) ==========
-    const originalSetupBtnAim = window.setupBtnAim;
-    if (typeof originalSetupBtnAim === 'function') {
-        window.setupBtnAim = function(btn, aimObj, checkFunc, actionFunc) {
-            originalSetupBtnAim(btn, aimObj, checkFunc, actionFunc);
-            if (btn === gadgetBtn) {
-                btn.addEventListener('touchstart', e => {
-                    if (player.charType !== CHAR_ID || !player.gadgetReady) return;
-                    yaprakAimActive = true;
-                    const t = e.changedTouches[0];
-                    yaprakAimStartX = t.clientX;
-                    yaprakAimStartY = t.clientY;
-                    yaprakAimAngle = player.angle;
-                    yaprakAimPull = 0;
-                }, {passive: false});
-                btn.addEventListener('touchmove', e => {
-                    if (!yaprakAimActive) return;
-                    const t = e.changedTouches[0];
-                    yaprakAimAngle = getAngle({x: yaprakAimStartX, y: yaprakAimStartY}, {x: t.clientX, y: t.clientY});
-                    yaprakAimPull = Math.min(1, Math.hypot(t.clientX - yaprakAimStartX, t.clientY - yaprakAimStartY) / 160);
-                }, {passive: false});
-                btn.addEventListener('touchend', e => {
-                    if (!yaprakAimActive) return;
-                    yaprakAimActive = false;
-                    player.activateGadget(yaprakAimAngle, yaprakAimPull < 0.05 ? 1 : yaprakAimPull);
-                });
-                btn.addEventListener('mousedown', e => {
-                    if (player.charType !== CHAR_ID || !player.gadgetReady) return;
-                    yaprakAimActive = true;
-                    yaprakAimStartX = e.clientX;
-                    yaprakAimStartY = e.clientY;
-                    yaprakAimAngle = player.angle;
-                    yaprakAimPull = 0;
-                });
-                window.addEventListener('mousemove', e => {
-                    if (!yaprakAimActive) return;
-                    yaprakAimAngle = getAngle({x: yaprakAimStartX, y: yaprakAimStartY}, {x: e.clientX, y: e.clientY});
-                    yaprakAimPull = Math.min(1, Math.hypot(e.clientX - yaprakAimStartX, e.clientY - yaprakAimStartY) / 160);
-                });
-                window.addEventListener('mouseup', e => {
-                    if (!yaprakAimActive) return;
-                    yaprakAimActive = false;
-                    player.activateGadget(yaprakAimAngle, yaprakAimPull < 0.05 ? 1 : yaprakAimPull);
-                });
-            }
-        };
-    }
+    // ========== BOT HEDEFLEME: Bitkiyi hedef listesine ekle ==========
+    chainHook('getExtraTargets', function () {
+        if (player.charType !== CHAR_ID) return [];
+        return leafPlants.filter(p => !p.isDead).map(p => ({
+            x: p.x, y: p.y, radius: p.radius, hp: p.hp, maxHp: p.maxHp,
+            isPlant: true, isActive: true
+        }));
+    });
+
+    // ========== BOT HEDEF SEÇİMİ: Bitkiyi hedef al ==========
+    chainHook('getBotTarget', function (bot) {
+        if (player.charType !== CHAR_ID || leafPlants.length === 0) return null;
+        const plant = leafPlants.find(p => !p.isDead);
+        if (plant && getDist(bot, plant) < 400) {
+            return plant;
+        }
+        return null;
+    });
 
     // ========== UI GÜNCELLEME ==========
-    function ensureLeafUI(ts) {
+    function ensureLeafUI() {
         if (!gameStarted) return;
         if (player.charType === CHAR_ID) {
             if (gadgetBtn) gadgetBtn.style.display = 'flex';
@@ -367,7 +340,7 @@
             if (ultiBtn) ultiBtn.style.display = 'flex';
 
             if (gadgetBtn && gadgetBtn.dataset.yaprakLabelSet !== '1') {
-                gadgetBtn.innerHTML = 'YAPRAK<br>SIÇRAYIŞ<br><span id="gadget-timer"></span>';
+                gadgetBtn.innerHTML = 'DİKENLİ<br>KÖK BİTKİ<br><span id="gadget-timer"></span>';
                 gadgetBtn.dataset.yaprakLabelSet = '1';
             }
             if (gadgetBtn2 && gadgetBtn2.dataset.yaprakLabelSet !== '1') {
@@ -391,17 +364,6 @@
             }
         }
 
-        // Zıplama inişi: cephane dolsun
-        if (player.charType === CHAR_ID) {
-            if (wasJumping && !player.isJumping) {
-                player.ammo = player.maxAmmo;
-                addFloatingNumber(player.x, player.y, "CEPHANE DOLDU!", "#f1c40f");
-            }
-            wasJumping = player.isJumping;
-        } else {
-            wasJumping = false;
-        }
-
         // Takip eden alan buff süresi
         if (player.charType === CHAR_ID && player.kFollowUltiBuff) {
             player.kFollowUltiBuffTimer -= 1;
@@ -412,8 +374,57 @@
         }
     }
 
-    // ========== MERMİ VE ALAN GÜNCELLEME ==========
+    // ========== MERMİ, ALAN VE BİTKİ GÜNCELLEME ==========
     function leafUpdate(ts) {
+        // ---- Bitki güncelle ----
+        for (let i = leafPlants.length - 1; i >= 0; i--) {
+            const p = leafPlants[i];
+            if (p.isDead) { leafPlants.splice(i, 1); continue; }
+
+            p.age += ts;
+            p.life -= ts;
+            p.attackTimer += ts;
+
+            // Bitki süresi doldu veya canı bitti
+            if (p.life <= 0 || p.hp <= 0) {
+                explodePlant(p);
+                leafPlants.splice(i, 1);
+                continue;
+            }
+
+            // Bitkiye ulti alanı iyileştirmesi
+            leafZones.forEach(z => {
+                if (getDist(p, z) < z.radius) {
+                    p.hp = Math.min(p.maxHp, p.hp + (ULTI_STANDING_HEAL_PER_SEC / 60) * ts);
+                }
+            });
+
+            // Botlar bitkiye saldırabilir: çarpışma ve hasar alma
+            getActiveEnemies().forEach(e => {
+                if (e.isPlant) return;
+                // Botların bitkiye temas hasarı (opsiyonel, yok sayılabilir)
+                // Ama bot mermileri zaten getExtraTargets ile bitkiye çarpar.
+            });
+
+            // Saldırı: her 1 saniyede bir düşmana yaprak mermisi at
+            if (p.attackTimer >= PLANT_ATTACK_INTERVAL) {
+                p.attackTimer = 0;
+                const target = getActiveEnemies().find(e => getDist(p, e) < PLANT_ATTACK_RADIUS);
+                if (target) {
+                    const angle = getAngle(p, target);
+                    spawnLeaf(p.x, p.y, angle, PLANT_DAMAGE, true);
+                    p.hp -= PLANT_SELF_DAMAGE_PER_SHOT;
+                    addFloatingNumber(p.x, p.y - 20, "-" + PLANT_SELF_DAMAGE_PER_SHOT, "#e74c3c");
+                    if (p.hp <= 0) {
+                        explodePlant(p);
+                        leafPlants.splice(i, 1);
+                        continue;
+                    }
+                }
+            }
+        }
+
+        // ---- Ulti alanları ----
         for (let i = leafZones.length - 1; i >= 0; i--) {
             const z = leafZones[i];
             if (z.followsPlayer) { z.x = player.x; z.y = player.y; }
@@ -451,6 +462,7 @@
             }
         }
 
+        // ---- Yaprak mermileri ----
         for (let i = leafBullets.length - 1; i >= 0; i--) {
             const b = leafBullets[i];
             b.age = (b.age || 0) + ts;
@@ -479,12 +491,17 @@
                     if (b.hitTargets.includes(e)) continue;
                     if (getDist(b, e) < e.radius + LEAF_HIT_PAD) {
                         b.hitTargets.push(e);
-                        e.hp -= b.dmg; addFloatingNumber(e.x, e.y - 6, b.dmg, "#27ae60");
-                        e.hp -= ULTI_BONUS_DAMAGE; addFloatingNumber(e.x, e.y + 10, ULTI_BONUS_DAMAGE, "#f1c40f");
+                        let totalDmg = b.dmg + ULTI_BONUS_DAMAGE;
+                        e.hp -= totalDmg;
+                        addFloatingNumber(e.x, e.y - 6, totalDmg, "#27ae60");
                         e.kbX = (e.kbX || 0) + Math.cos(b.angle) * KNOCKBACK_MAG;
                         e.kbY = (e.kbY || 0) + Math.sin(b.angle) * KNOCKBACK_MAG;
-                        player.hp = Math.min(player.maxHp, player.hp + ULTI_HIT_HEAL);
-                        addFloatingNumber(player.x, player.y, "+" + ULTI_HIT_HEAL, "#2ecc71");
+                        if (!b.isFromPlant) {
+                            player.hp = Math.min(player.maxHp, player.hp + ULTI_HIT_HEAL);
+                            addFloatingNumber(player.x, player.y, "+" + ULTI_HIT_HEAL, "#2ecc71");
+                        }
+                        leafBullets.splice(i, 1);
+                        break;
                     }
                 }
                 continue;
@@ -493,7 +510,8 @@
             let hit = false;
             for (const e of getActiveEnemies()) {
                 if (getDist(b, e) < e.radius + LEAF_HIT_PAD) {
-                    e.hp -= b.dmg; addFloatingNumber(e.x, e.y, b.dmg, "#27ae60");
+                    e.hp -= b.dmg;
+                    addFloatingNumber(e.x, e.y, b.dmg, "#27ae60");
                     e.kbX = (e.kbX || 0) + Math.cos(b.angle) * KNOCKBACK_MAG;
                     e.kbY = (e.kbY || 0) + Math.sin(b.angle) * KNOCKBACK_MAG;
                     hit = true;
@@ -502,5 +520,21 @@
             }
             if (hit) { leafBullets.splice(i, 1); continue; }
         }
+    }
+
+    function explodePlant(p) {
+        spawnParticles(p.x, p.y, '#229954', 'smoke');
+        addFloatingNumber(p.x, p.y, "BİTKİ PATLADI!", "#e74c3c");
+        explosions.push({x: p.x, y: p.y, radius: 10, maxRadius: 80, life: 15, maxLife: 15});
+        getActiveEnemies().forEach(e => {
+            const d = getDist(p, e);
+            if (d < 100 + e.radius) {
+                e.hp -= PLANT_EXPLOSION_DAMAGE;
+                addFloatingNumber(e.x, e.y, PLANT_EXPLOSION_DAMAGE, "#e74c3c");
+                const angle = getAngle(p, e);
+                e.kbX = Math.cos(angle) * PLANT_EXPLOSION_KNOCKBACK;
+                e.kbY = Math.sin(angle) * PLANT_EXPLOSION_KNOCKBACK;
+            }
+        });
     }
 })();
