@@ -97,6 +97,7 @@
             this.tasciPatlayanHazir = false;
             this.tasciHasarKayitlari = [];
             this.tasciZirhAnimasyon = 0;
+            oncekiHp = this.hp; // DÜZELTME: karakter değişince oncekiHp güncelleniyor
             tasciKayalar = [];
             tasciParcalar = [];
             this.ultReady = false;
@@ -233,10 +234,9 @@
         if (ultiBtn) ultiBtn.classList.remove('ready');
     };
 
-    // ---- chargeUlti override ----
-    const originalChargeUlti = window.chargeUlti;
-    window.chargeUlti = function (amount) {
-        if (player.charType !== CHAR_ID) return originalChargeUlti(amount);
+    // ---- chargeUlti: chainHook ile güvenli sarmalama ----
+    chainHook('onChargeUlti', function (amount) {
+        if (player.charType !== CHAR_ID) return;
         if (!gameStarted || player.ultReady) return;
         player.ultCharge = Math.min(100, player.ultCharge + amount);
         if (player.ultCharge >= ULTI_DOLUM_LIMIT) {
@@ -245,7 +245,7 @@
             addFloatingNumber(player.x, player.y - 40, "GÜÇ HAZIR!", "#f1c40f");
         }
         if (ultFill) ultFill.style.width = player.ultCharge + "%";
-    };
+    });
 
     // ---- Reset hook ----
     chainHook('onReset', function () {
@@ -268,8 +268,8 @@
 
     // ---- onAimDraw: Taşçı nişan çizgisi ve ulti alanı ----
     chainHook('onAimDraw', function (ctx2) {
-        // Taşçı nişan çizgisi (aimData.active kontrolü KALDIRILDI)
-        if (player.charType === CHAR_ID && player.ammo >= 1 && !player.isDead) {
+        // Taşçı nişan çizgisi (sadece nişan alırken görünür)
+        if (player.charType === CHAR_ID && player._tasciAimGeriGetir && player.ammo >= 1 && !player.isDead) {
             ctx2.save();
             ctx2.translate(player.x, player.y);
             ctx2.rotate(aimData.angle);
