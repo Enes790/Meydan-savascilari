@@ -1,7 +1,8 @@
 // ========== mod9.js (KÜL) - AURALI CAN EMİCİ ==========
 // - Kısa menzilli iki mermi atar (600 + 300 delici).
-// - Aura: 70 birim yarıçap, hasar vermez, içindeki her düşman başına
+// - Aura: 85 birim yarıçap, hasar vermez, içindeki her düşman başına
 //   saniyede 300 can kazandırır. Rengi merkezden dışa saydamlaşır.
+// - Aura her can aldığında parlar (animasyonlu).
 // - Ulti: anında 200 can verir, 1 saniye sonra aura patlar,
 //   1000 hasar + Buz Botu kadar savurma.
 // - Tema: sıcaklık / kül. Renk: koyu gri-turuncu.
@@ -25,7 +26,7 @@
     const MERMI_HIZ = PLAYER_BULLET_SPEED * 0.6; // Taşçı hızında
 
     // Aura
-    const AURA_YARICAP = 70;
+    const AURA_YARICAP = 85;
     const AURA_CAN_KAZANIM = 300;          // saniyede düşman başına
 
     // Ulti
@@ -85,6 +86,7 @@
         if (type === CHAR_ID) {
             this.kulUltiZamanlayici = 0;
             this.kulUltiAktif = false;
+            this.kulAuraPulse = 0;
             kulMermileri = [];
             if (gadgetBtn) gadgetBtn.style.display = 'none';
             if (gadgetBtn2) gadgetBtn2.style.display = 'none';
@@ -142,6 +144,7 @@
 
         this.hp = Math.min(this.maxHp, this.hp + ULTI_ANINDA_CAN);
         addFloatingNumber(this.x, this.y - 30, "+" + ULTI_ANINDA_CAN, "#2ecc71");
+        this.kulAuraPulse = 1.0;
 
         this.kulUltiZamanlayici = ULTI_GECIKME;
         this.kulUltiAktif = true;
@@ -166,9 +169,15 @@
         });
         if (toplamCan > 0) {
             player.hp = Math.min(player.maxHp, player.hp + toplamCan);
+            player.kulAuraPulse = Math.min(1.0, (player.kulAuraPulse || 0) + 0.08);
             if (!player._kulCanYazisiZaman || Date.now() - player._kulCanYazisiZaman > 1000) {
                 addFloatingNumber(player.x, player.y - 20, "+" + Math.floor(toplamCan * 60), "#2ecc71");
                 player._kulCanYazisiZaman = Date.now();
+            }
+        } else {
+            // Can almıyorsa parlama söner
+            if (player.kulAuraPulse > 0) {
+                player.kulAuraPulse = Math.max(0, player.kulAuraPulse - 0.02);
             }
         }
 
@@ -230,6 +239,7 @@
         if (player) {
             player.kulUltiAktif = false;
             player.kulUltiZamanlayici = 0;
+            player.kulAuraPulse = 0;
         }
     });
 
@@ -237,13 +247,16 @@
     chainHook('onDraw', function (ctx2) {
         if (!gameStarted || player.charType !== CHAR_ID) return;
 
-        // Aura: merkezden dışa saydamlaşan yumuşak gradyan, çizgi yok
+        // Aura: merkezden dışa saydamlaşan yumuşak gradyan, kesikli çizgi YOK
+        // Karakterin altında durur, can aldıkça parlar.
+        const pulse = player.kulAuraPulse || 0;
+        const auraAlpha = 0.45 + pulse * 0.3;
         const grad = ctx2.createRadialGradient(
             player.x, player.y, AURA_YARICAP * 0.1,
             player.x, player.y, AURA_YARICAP
         );
-        grad.addColorStop(0, 'rgba(211, 84, 0, 0.55)');
-        grad.addColorStop(0.6, 'rgba(211, 84, 0, 0.25)');
+        grad.addColorStop(0, `rgba(211, 84, 0, ${auraAlpha})`);
+        grad.addColorStop(0.6, `rgba(211, 84, 0, ${auraAlpha * 0.5})`);
         grad.addColorStop(1, 'rgba(211, 84, 0, 0)');
         ctx2.save();
         ctx2.beginPath();
@@ -252,24 +265,23 @@
         ctx2.fill();
         ctx2.restore();
 
-        // Mermiler: damla/alev şekli, top değil
+        // Mermiler: Devko mermisine benzer uzun ok şekli
         kulMermileri.forEach(m => {
             ctx2.save();
             ctx2.translate(m.x, m.y);
             ctx2.rotate(m.angle);
-            // Arkada iz
-            ctx2.beginPath();
-            ctx2.ellipse(-4, 0, 6, 2.5, 0, 0, Math.PI * 2);
-            ctx2.fillStyle = 'rgba(211, 84, 0, 0.3)';
-            ctx2.fill();
-            // Damla gövdesi
-            ctx2.beginPath();
-            ctx2.moveTo(7, 0);
-            ctx2.quadraticCurveTo(0, -5, -4, 0);
-            ctx2.quadraticCurveTo(0, 5, 7, 0);
-            ctx2.closePath();
+            // Ok gövdesi
             ctx2.fillStyle = m.delmeHakki > 0 ? '#e67e22' : '#a04000';
+            ctx2.beginPath();
+            ctx2.moveTo(-10, -6);
+            ctx2.lineTo(5, -6);
+            ctx2.quadraticCurveTo(13, 0, 5, 6);
+            ctx2.lineTo(-10, 6);
+            ctx2.closePath();
             ctx2.fill();
+            // Parlak şerit
+            ctx2.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx2.fillRect(-5, -3, 6, 3);
             ctx2.restore();
         });
 
@@ -306,12 +318,12 @@
             ctx2.save();
             ctx2.translate(player.x, player.y);
             ctx2.rotate(aimData.angle);
-            // İçi boş saydam dikdörtgen (Devko tarzı)
-            ctx2.strokeStyle = 'rgba(211, 84, 0, 0.7)';
-            ctx2.lineWidth = 2;
-            ctx2.setLineDash([5, 5]);
-            ctx2.strokeRect(0, -5, SALDIRI_MENZILI, 10);
-            ctx2.setLineDash([]);
+            // Devko tarzı: içi yarı saydam, kenarlıklı dikdörtgen
+            ctx2.fillStyle = 'rgba(211, 84, 0, 0.15)';
+            ctx2.fillRect(0, -10, SALDIRI_MENZILI, 20);
+            ctx2.strokeStyle = 'rgba(211, 84, 0, 0.5)';
+            ctx2.lineWidth = 1;
+            ctx2.strokeRect(0, -10, SALDIRI_MENZILI, 20);
             ctx2.restore();
         }
     });
