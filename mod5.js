@@ -3,10 +3,10 @@
 // - Aura: 94 birim yarıçap, hasar vermez, içindeki her düşman başına
 //   saniyede 200 can kazandırır. Çok hafif görünür, göz yormaz.
 // - Aura her can aldığında hafifçe parlar (animasyonlu).
-// - Ulti: anında 200 can verir, 1.5 saniye hasar almaz,
-//   sonra aura patlar, 1000 hasar + Buz Botu kadar savurma.
+// - Ulti: anında 200 can verir, 0.5 saniye hasar almaz,
+//   sonra aura patlar, 1000 hasar verir (savurma YOK).
+// - Ulti patlaması vurduğu her düşman başına %15 ulti doldurur.
 // - Tema: sıcaklık / kül. Renk: koyu gri-turuncu.
-// - Mimari: IIFE içinde, zincirleme hook'lar, bağımsız mermi dizisi.
 
 (function () {
     'use strict';
@@ -14,7 +14,7 @@
     const CHAR_ID = 'kul';
     const CHAR_COLOR = '#4a4a4a';
     const CHAR_ACCENT = '#d35400';
-    const CHAR_HP = 3300; // 500 eklendi (2800 + 500)
+    const CHAR_HP = 3300;
     const CHAR_SPEED = 3.8;
 
     // Saldırı
@@ -31,10 +31,10 @@
 
     // Ulti
     const ULTI_ANINDA_CAN = 200;
-    const ULTI_GECIKME = 90; // 1.5 saniye (60 frame * 1.5)
+    const ULTI_GECIKME = 60; // 1 saniye
     const ULTI_PATLAMA_HASAR = 1000;
-    const ULTI_SAVURMA = 40;
-    const ULTI_PATLAMA_YARICAP = 100;
+    const ULTI_PATLAMA_YARICAP = 70; // küçültüldü
+    const ULTI_DOKUNULMAZLIK = 30; // 0.5 saniye
 
     window.GAME_EXT.characters[CHAR_ID] = {
         color: CHAR_COLOR,
@@ -147,18 +147,16 @@
         if (this.charType !== CHAR_ID) return originalFireUlti.call(this, a);
         if (!this.ultReady || this.isDead) return;
 
-        // Anında can ver
         this.hp = Math.min(this.maxHp, this.hp + ULTI_ANINDA_CAN);
         addFloatingNumber(this.x, this.y - 30, "+" + ULTI_ANINDA_CAN, "#2ecc71");
         this.kulAuraPulse = 1.0;
 
-        // 1.5 saniye hasar almazlık
-        this.kulHasarAlmazlik = ULTI_GECIKME;
-        this.jumpInvulnerable = true; // ana oyunun genel dokunulmazlık bayrağı
+        // 0.5 saniye hasar almazlık
+        this.kulHasarAlmazlik = ULTI_DOKUNULMAZLIK;
+        this.jumpInvulnerable = true;
 
         this.kulUltiZamanlayici = ULTI_GECIKME;
         this.kulUltiAktif = true;
-        addFloatingNumber(this.x, this.y - 40, "KÜL PATLAMASI YAKLAŞIYOR!", CHAR_ACCENT);
 
         this.ultReady = false;
         this.ultCharge = 0;
@@ -166,7 +164,7 @@
         if (ultiBtn) ultiBtn.classList.remove('ready');
     };
 
-    // ========== ULTİ DOLDURMA (hook ile) ==========
+    // ========== ULTİ DOLDURMA ==========
     chainHook('onChargeUlti', function (amount) {
         if (!gameStarted || player.charType !== CHAR_ID || player.ultReady) return;
         player.ultCharge = Math.min(100, player.ultCharge + amount);
@@ -182,12 +180,10 @@
     chainHook('onUpdate', function (ts) {
         if (!gameStarted || player.charType !== CHAR_ID) return;
 
-        // Ulti butonunun her karede görünür kalmasını sağla
         if (ultiBtn && ultiBtn.style.display !== 'flex') {
             ultiBtn.style.display = 'flex';
         }
 
-        // Aura can kazanımı
         let toplamCan = 0;
         getActiveEnemies().forEach(e => {
             if (getDist(player, e) <= AURA_YARICAP + e.radius) {
@@ -207,7 +203,6 @@
             }
         }
 
-        // Hasar almazlık süresi azalsın
         if (player.kulHasarAlmazlik > 0) {
             player.kulHasarAlmazlik -= ts;
             if (player.kulHasarAlmazlik <= 0) {
@@ -216,7 +211,6 @@
             }
         }
 
-        // Ulti gecikmesi
         if (player.kulUltiAktif) {
             player.kulUltiZamanlayici -= ts;
             if (player.kulUltiZamanlayici <= 0) {
@@ -225,32 +219,20 @@
             }
         }
 
-        // Mermi güncelleme
         for (let i = kulMermileri.length - 1; i >= 0; i--) {
             const m = kulMermileri[i];
             if (m.isDead) { kulMermileri.splice(i, 1); continue; }
-
             m.age += ts;
             m.x += m.vx * ts;
             m.y += m.vy * ts;
-
-            if (getDist({x: m.sx, y: m.sy}, m) > SALDIRI_MENZILI) {
-                m.isDead = true;
-                continue;
-            }
-
+            if (getDist({x: m.sx, y: m.sy}, m) > SALDIRI_MENZILI) { m.isDead = true; continue; }
             if (m.x < WALL_THICKNESS + 5 || m.x > canvas.width - WALL_THICKNESS - 5 ||
-                m.y < WALL_THICKNESS + 5 || m.y > canvas.height - WALL_THICKNESS - 5) {
-                m.isDead = true;
-                continue;
-            }
-
+                m.y < WALL_THICKNESS + 5 || m.y > canvas.height - WALL_THICKNESS - 5) { m.isDead = true; continue; }
             let hitObs = false;
             for (const o of obstacles.concat(cactusWalls || [])) {
                 if (getDist(m, o) < o.radius + 6) { hitObs = true; break; }
             }
             if (hitObs) { m.isDead = true; continue; }
-
             for (const e of getActiveEnemies()) {
                 if (m.isDead) break;
                 if (m.hitTargets.includes(e)) continue;
@@ -258,11 +240,8 @@
                     e.hp -= m.hasar;
                     addFloatingNumber(e.x, e.y, m.hasar, CHAR_ACCENT);
                     m.hitTargets.push(e);
-                    if (m.delmeHakki > 0) {
-                        m.delmeHakki--;
-                    } else {
-                        m.isDead = true;
-                    }
+                    if (m.delmeHakki > 0) { m.delmeHakki--; }
+                    else { m.isDead = true; }
                 }
             }
         }
@@ -284,7 +263,6 @@
     chainHook('onDraw', function (ctx2) {
         if (!gameStarted || player.charType !== CHAR_ID) return;
 
-        // Aura: ÇOK HAFİF
         const pulse = player.kulAuraPulse || 0;
         const auraAlpha = 0.08 + pulse * 0.08;
         const grad = ctx2.createRadialGradient(
@@ -301,7 +279,6 @@
         ctx2.fill();
         ctx2.restore();
 
-        // Mermiler
         kulMermileri.forEach(m => {
             ctx2.save();
             ctx2.translate(m.x, m.y);
@@ -318,25 +295,6 @@
             ctx2.fillRect(-5, -3, 6, 3);
             ctx2.restore();
         });
-
-        // Ulti uyarısı
-        if (player.kulUltiAktif) {
-            const kalan = player.kulUltiZamanlayici / 60;
-            ctx2.save();
-            ctx2.translate(player.x, player.y);
-            ctx2.globalAlpha = 0.7;
-            ctx2.beginPath();
-            ctx2.arc(0, 0, AURA_YARICAP + 20, 0, Math.PI * 2);
-            ctx2.strokeStyle = '#e74c3c';
-            ctx2.lineWidth = 3;
-            ctx2.stroke();
-            ctx2.globalAlpha = 1;
-            ctx2.fillStyle = '#e74c3c';
-            ctx2.font = "bold 14px Arial";
-            ctx2.textAlign = "center";
-            ctx2.fillText(kalan.toFixed(1), 0, -AURA_YARICAP - 25);
-            ctx2.restore();
-        }
     });
 
     // ========== NİŞAN ÇİZGİSİ ==========
@@ -380,16 +338,28 @@
         screenShake = 10;
         addFloatingNumber(p.x, p.y - 30, "KÜL PATLAMASI!", CHAR_ACCENT);
 
+        let vurulanSayi = 0;
         getActiveEnemies().forEach(e => {
             const d = getDist(p, e);
             if (d <= ULTI_PATLAMA_YARICAP + e.radius) {
                 e.hp -= ULTI_PATLAMA_HASAR;
                 addFloatingNumber(e.x, e.y, ULTI_PATLAMA_HASAR, "#e74c3c");
-                const ang = getAngle(p, e);
-                e.kbX = Math.cos(ang) * ULTI_SAVURMA;
-                e.kbY = Math.sin(ang) * ULTI_SAVURMA;
+                vurulanSayi++;
+                // Savurma YOK
             }
         });
+
+        // Vurduğu her düşman başına %15 ulti doldur
+        if (vurulanSayi > 0) {
+            const dolum = vurulanSayi * 15;
+            player.ultCharge = Math.min(100, player.ultCharge + dolum);
+            if (player.ultCharge >= 100 && !player.ultReady) {
+                player.ultReady = true;
+                if (ultiBtn) ultiBtn.classList.add('ready');
+                addFloatingNumber(player.x, player.y - 50, "GÜÇ HAZIR!", "#f1c40f");
+            }
+            if (ultFill) ultFill.style.width = player.ultCharge + "%";
+        }
     }
 
     console.log('[MOD YÜKLENDİ]', CHAR_ID);
