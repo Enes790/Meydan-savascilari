@@ -6,6 +6,7 @@
 // - Ultiye özel efekt eklendi (iç içe 2 genişleyen daire + hafif parçacık)
 // - Taş Zırh: son 3 saniyede hasar alınmadıysa aksesuar boşa gitmez, beklemede kalır
 // - Taş Zırh basılınca küçük animasyon (taş halkası)
+// - Patlayan Taş parçaları menzil sonunda veya engele çarpınca patlar
 
 (function () {
     'use strict';
@@ -97,7 +98,7 @@
             this.tasciPatlayanHazir = false;
             this.tasciHasarKayitlari = [];
             this.tasciZirhAnimasyon = 0;
-            oncekiHp = this.hp; // DÜZELTME: karakter değişince oncekiHp güncelleniyor
+            oncekiHp = this.hp;
             tasciKayalar = [];
             tasciParcalar = [];
             this.ultReady = false;
@@ -547,6 +548,10 @@
             }
             const mesafe = getDist(p, { x: p.sx, y: p.sy });
             if (hwX || hwY || hitObs || mesafe > PARCA_MENZIL) {
+                // YENİ: Patlayan Taş parçaları menzil sonunda veya engele çarpınca patlar
+                if (p.patlayan) {
+                    patlat(p.x, p.y);
+                }
                 p.isDead = true;
                 continue;
             }
