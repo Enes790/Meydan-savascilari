@@ -1,8 +1,8 @@
 // ========== mod9.js (KÜL) - AURALI CAN EMİCİ ==========
 // - Kısa menzilli iki mermi atar (600 + 300 delici).
 // - Aura: 85 birim yarıçap, hasar vermez, içindeki her düşman başına
-//   saniyede 300 can kazandırır. Rengi merkezden dışa saydamlaşır.
-// - Aura her can aldığında parlar (animasyonlu).
+//   saniyede 300 can kazandırır. Çok hafif görünür, göz yormaz.
+// - Aura her can aldığında hafifçe parlar (animasyonlu).
 // - Ulti: anında 200 can verir, 1 saniye sonra aura patlar,
 //   1000 hasar + Buz Botu kadar savurma.
 // - Tema: sıcaklık / kül. Renk: koyu gri-turuncu.
@@ -247,10 +247,9 @@
     chainHook('onDraw', function (ctx2) {
         if (!gameStarted || player.charType !== CHAR_ID) return;
 
-        // Aura: merkezden dışa saydamlaşan yumuşak gradyan, kesikli çizgi YOK
-        // Karakterin altında durur, can aldıkça parlar.
+        // Aura: ÇOK HAFİF, göz yormaz. Merkezden dışa saydamlaşır.
         const pulse = player.kulAuraPulse || 0;
-        const auraAlpha = 0.45 + pulse * 0.3;
+        const auraAlpha = 0.15 + pulse * 0.15; // çok düşük opaklık
         const grad = ctx2.createRadialGradient(
             player.x, player.y, AURA_YARICAP * 0.1,
             player.x, player.y, AURA_YARICAP
