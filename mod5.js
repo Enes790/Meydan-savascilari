@@ -1,7 +1,7 @@
 // ========== mod9.js (KÜL) - AURALI CAN EMİCİ ==========
 // - Kısa menzilli iki mermi atar (600 + 300 delici).
-// - Aura: 85 birim yarıçap, hasar vermez, içindeki her düşman başına
-//   saniyede 300 can kazandırır. Çok hafif görünür, göz yormaz.
+// - Aura: 94 birim yarıçap, hasar vermez, içindeki her düşman başına
+//   saniyede 200 can kazandırır. Çok hafif görünür, göz yormaz.
 // - Aura her can aldığında hafifçe parlar (animasyonlu).
 // - Ulti: anında 200 can verir, 1 saniye sonra aura patlar,
 //   1000 hasar + Buz Botu kadar savurma.
@@ -18,22 +18,22 @@
     const CHAR_SPEED = 3.8;
 
     // Saldırı
-    const SALDIRI_MENZILI = 95;           // Devko yumruğu kadar
+    const SALDIRI_MENZILI = 95;
     const ILK_MERMI_HASAR = 600;
     const IKINCI_MERMI_HASAR = 300;
-    const IKINCI_MERMI_DELME = 2;          // kaç düşmanı delebilir
-    const MERMI_ARALIK_MS = 100;           // 0.1 saniye
-    const MERMI_HIZ = PLAYER_BULLET_SPEED * 0.6; // Taşçı hızında
+    const IKINCI_MERMI_DELME = 2;
+    const MERMI_ARALIK_MS = 100;
+    const MERMI_HIZ = PLAYER_BULLET_SPEED * 0.8; // biraz hızlandı
 
     // Aura
-    const AURA_YARICAP = 85;
-    const AURA_CAN_KAZANIM = 300;          // saniyede düşman başına
+    const AURA_YARICAP = 94; // 85'in %10 fazlası
+    const AURA_CAN_KAZANIM = 200; // bot başına saniyede 200
 
     // Ulti
     const ULTI_ANINDA_CAN = 200;
-    const ULTI_GECIKME = 60;               // 1 saniye (60 frame)
+    const ULTI_GECIKME = 60;
     const ULTI_PATLAMA_HASAR = 1000;
-    const ULTI_SAVURMA = 40;               // Buz Botu kadar
+    const ULTI_SAVURMA = 40;
     const ULTI_PATLAMA_YARICAP = 100;
 
     window.GAME_EXT.characters[CHAR_ID] = {
@@ -90,7 +90,7 @@
             kulMermileri = [];
             if (gadgetBtn) gadgetBtn.style.display = 'none';
             if (gadgetBtn2) gadgetBtn2.style.display = 'none';
-            if (ultiBtn) ultiBtn.style.display = 'flex';
+            if (ultiBtn) ultiBtn.style.display = 'flex'; // ulti buton görünür
         }
     };
 
@@ -160,6 +160,11 @@
     chainHook('onUpdate', function (ts) {
         if (!gameStarted || player.charType !== CHAR_ID) return;
 
+        // Ulti butonunun her karede görünür kalmasını sağla
+        if (ultiBtn && ultiBtn.style.display !== 'flex') {
+            ultiBtn.style.display = 'flex';
+        }
+
         // Aura can kazanımı
         let toplamCan = 0;
         getActiveEnemies().forEach(e => {
@@ -175,7 +180,6 @@
                 player._kulCanYazisiZaman = Date.now();
             }
         } else {
-            // Can almıyorsa parlama söner
             if (player.kulAuraPulse > 0) {
                 player.kulAuraPulse = Math.max(0, player.kulAuraPulse - 0.02);
             }
@@ -249,7 +253,7 @@
 
         // Aura: ÇOK HAFİF, göz yormaz. Merkezden dışa saydamlaşır.
         const pulse = player.kulAuraPulse || 0;
-        const auraAlpha = 0.15 + pulse * 0.15; // çok düşük opaklık
+        const auraAlpha = 0.08 + pulse * 0.08; // çok düşük opaklık
         const grad = ctx2.createRadialGradient(
             player.x, player.y, AURA_YARICAP * 0.1,
             player.x, player.y, AURA_YARICAP
@@ -269,7 +273,6 @@
             ctx2.save();
             ctx2.translate(m.x, m.y);
             ctx2.rotate(m.angle);
-            // Ok gövdesi
             ctx2.fillStyle = m.delmeHakki > 0 ? '#e67e22' : '#a04000';
             ctx2.beginPath();
             ctx2.moveTo(-10, -6);
@@ -278,7 +281,6 @@
             ctx2.lineTo(-10, 6);
             ctx2.closePath();
             ctx2.fill();
-            // Parlak şerit
             ctx2.fillStyle = 'rgba(255,255,255,0.4)';
             ctx2.fillRect(-5, -3, 6, 3);
             ctx2.restore();
@@ -317,7 +319,6 @@
             ctx2.save();
             ctx2.translate(player.x, player.y);
             ctx2.rotate(aimData.angle);
-            // Devko tarzı: içi yarı saydam, kenarlıklı dikdörtgen
             ctx2.fillStyle = 'rgba(211, 84, 0, 0.15)';
             ctx2.fillRect(0, -10, SALDIRI_MENZILI, 20);
             ctx2.strokeStyle = 'rgba(211, 84, 0, 0.5)';
