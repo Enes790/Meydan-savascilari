@@ -1,86 +1,58 @@
-// ============================================================================
-// MUTASYON MODU (mod6.js) — v4
-// ----------------------------------------------------------------------------
-// DEĞİŞENLER:
-// 1) İyileştirici Bot artık BOT2'NİN YERİNE geçiyor: kendi zamanlayıcısı yok,
-//    tıpkı bot2 gibi 7 öldürmeden sonra doğuyor, ölünce klasik bot2 gibi
-//    yeniden doğuyor. Gerçek bot2 kalıcı olarak devre dışı bırakıldı (ana
-//    kodun onu kendiliğinden aktif etmeye çalışmasına karşı her karede
-//    zorla kapalı tutuluyor).
-// 2) İyileştirici Bot artık SADECE iyileştirmiyor, oyuncuya da saldırıyor
-//    (300 hasar). Görünümü klasik mor botla neredeyse aynı (rengi bile mor)
-//    ama üzerinde küçük bir "kabarcık" işareti var - bu onu ayırt ediyor.
-// 3) Sürü Botu'nun hasarı artık 400. Rengi, yakınında bot arttıkça SARIDAN
-//    TURUNCUYA doğru kayıyor. Etrafındaki hareket çizgileri, o anki
-//    rengin YAKLAŞIK TERSİ (ters renk) ile çiziliyor.
-// 4) Özel hasar değerleri (300/400) için ana dosyanın mermi fonksiyonu
-//    SARILIYOR ama sadece bizim etiketlediğimiz mermi tiplerine bakılıyor,
-//    her şeyin geri kalanı olduğu gibi orijinal fonksiyona bırakılıyor.
-// ============================================================================
+// ========== mod9.js (KÜL) - AURALI CAN EMİCİ ==========
+// - Kısa menzilli iki mermi atar (600 + 300 delici).
+// - Aura: 70 birim yarıçap, hasar vermez, içindeki her düşman başına
+//   saniyede 100 can kazandırır.
+// - Ulti: anında 200 can verir, 1 saniye sonra aura patlar,
+//   1000 hasar + Buz Botu kadar savurma.
+// - Tema: sıcaklık / kül. Renk: koyu gri-turuncu.
+// - Mimari: IIFE içinde, zincirleme hook'lar, bağımsız mermi dizisi.
 
 (function () {
     'use strict';
 
-    const MOD_ID = 'mutasyon';
+    const CHAR_ID = 'kul';
+    const CHAR_COLOR = '#4a4a4a';
+    const CHAR_ACCENT = '#d35400';
+    const CHAR_HP = 2800;
+    const CHAR_SPEED = 3.8;
 
-    // --- Sürü Botu ---
-    const SWARM_HP = 2200;
-    const SWARM_BASE_SPEED = 1.36;
-    const SWARM_SPEED_BONUS = 0.4;
-    const SWARM_NEARBY_RADIUS = 150;
-    const SWARM_ENGAGE_DIST = 180;
-    const SWARM_SHOOT_RANGE = RANGE;
-    const SWARM_SPAWN_INTERVAL = 490;
-    const SWARM_DAMAGE = 400;
-    const SWARM_COLOR_LOW = '#f1c40f';  // az bot varken: sarı
-    const SWARM_COLOR_HIGH = '#e67e22'; // çok bot varken: turuncu
-    const SPAWN_WARN_FRAMES = 90;
+    // Saldırı
+    const SALDIRI_MENZILI = 95;           // Devko yumruğu kadar
+    const ILK_MERMI_HASAR = 600;
+    const IKINCI_MERMI_HASAR = 300;
+    const IKINCI_MERMI_DELME = 2;          // kaç düşmanı delebilir
+    const MERMI_ARALIK_MS = 100;           // 0.1 saniye
 
-    // --- İyileştirici Bot (bot2'nin yerine geçiyor) ---
-    const HEALER_HP = 2000;
-    const HEALER_SPEED = 1.36;          // klasik moddaki sabit hız, zorluktan etkilenmiyor
-    const HEALER_DAMAGE = 300;
-    const HEALER_ENGAGE_DIST = 180;
-    const HEALER_SHOOT_RANGE = RANGE;
-    const HEALER_HEAL_RADIUS = Math.round(114 * 0.6); // ninja alanının (114) %40 küçüğü = 68
-    const HEALER_HEAL_INTERVAL = 180;   // 3 saniye
-    const HEALER_HEAL_OTHERS = 200;
-    const HEALER_HEAL_SELF = 400;
-    const HEALER_SPAWN_KILL_THRESHOLD = 7; // bot2 ile aynı eşik
-    const HEALER_RESPAWN_TIME = BOT_RESPAWN_TIME; // bot2 ile aynı bekleme süresi
-    const HEALER_COLOR = '#9b59b6'; // klasik mor - bilerek aynı
+    // Aura
+    const AURA_YARICAP = 70;
+    const AURA_CAN_KAZANIM = 100;          // saniyede düşman başına
 
-    let swarmBots = [];
-    let healerBots = []; // en fazla 1 eleman tutar, bot2 mantığına benzer
-    let mySpawnIndicators = [];
-    let swarmSpawnTimer = 0;
+    // Ulti
+    const ULTI_ANINDA_CAN = 200;
+    const ULTI_GECIKME = 60;               // 1 saniye (60 frame)
+    const ULTI_PATLAMA_HASAR = 1000;
+    const ULTI_SAVURMA = 40;               // Buz Botu kadar
+    const ULTI_PATLAMA_YARICAP = 100;
 
-    let healerUnlocked = false;     // 7 öldürmeye ulaşıldı mı
-    let healerRespawnTimer = -1;    // -1: beklemede değil
+    window.GAME_EXT.characters[CHAR_ID] = {
+        color: CHAR_COLOR,
+        hp: CHAR_HP,
+        speed: CHAR_SPEED
+    };
 
-    // ---- Renk yardımcı fonksiyonları ----
-    function hexToRgb(hex) {
-        hex = hex.replace('#', '');
-        return { r: parseInt(hex.substr(0, 2), 16), g: parseInt(hex.substr(2, 2), 16), b: parseInt(hex.substr(4, 2), 16) };
-    }
-    function rgbToHex(r, g, b) {
-        const c = v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
-        return '#' + c(r) + c(g) + c(b);
-    }
-    function lerpColor(hexA, hexB, t) {
-        const a = hexToRgb(hexA), b = hexToRgb(hexB);
-        return rgbToHex(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t);
-    }
-    function invertHex(hex) {
-        const c = hexToRgb(hex);
-        return rgbToHex(255 - c.r, 255 - c.g, 255 - c.b);
-    }
+    // Kendi mermi dizimiz (ana oyunun bilmediği tipler için güvenli)
+    let kulMermileri = [];
 
+    // Zincirleme hook yardımcısı (core.js'te yoksa diye kendi içinde de tanımlı)
     function chainHook(name, fn) {
-        const prev = window.GAME_EXT.hooks[name];
+        const prev = window.GAME_EXT && window.GAME_EXT.hooks ? window.GAME_EXT.hooks[name] : undefined;
+        window.GAME_EXT = window.GAME_EXT || { hooks: {} };
+        window.GAME_EXT.hooks = window.GAME_EXT.hooks || {};
         window.GAME_EXT.hooks[name] = function (...args) {
             let prevResult;
-            if (typeof prev === 'function') prevResult = prev.apply(this, args);
+            if (typeof prev === 'function') {
+                prevResult = prev.apply(this, args);
+            }
             const ownResult = fn.apply(this, args);
             if (typeof prevResult === 'boolean' || typeof ownResult === 'boolean') {
                 return !!prevResult || !!ownResult;
@@ -89,316 +61,286 @@
         };
     }
 
-    function randSpawnPoint() {
-        return {
-            x: Math.random() * (canvas.width - 200) + 100,
-            y: Math.random() * (canvas.height - 200) + 100
-        };
-    }
-
-    function createSwarmBot(x, y) {
-        return {
-            x, y, radius: 20, angle: 0,
-            hp: SWARM_HP, maxHp: SWARM_HP,
-            speed: SWARM_BASE_SPEED, color: SWARM_COLOR_LOW,
-            isDead: false, isActive: true,
-            kbX: 0, kbY: 0, bombaBulasti: false, bombaSayaci: 0,
-            lastShot: 0, shootInterval: BOT_SHOOT_INTERVAL,
-            currentNearbyCount: 0
-        };
-    }
-
-    function createHealerBot(x, y) {
-        return {
-            x, y, radius: 20, angle: Math.PI,
-            hp: HEALER_HP, maxHp: HEALER_HP,
-            speed: HEALER_SPEED, color: HEALER_COLOR,
-            isDead: false, isActive: true,
-            kbX: 0, kbY: 0, bombaBulasti: false, bombaSayaci: 0,
-            lastShot: 0, shootInterval: BOT_SHOOT_INTERVAL,
-            healCooldown: HEALER_HEAL_INTERVAL,
-            pulseFlash: 0
-        };
-    }
-
-    window.GAME_EXT.modes[MOD_ID] = {
-        label: 'Mutasyon',
-
-        onStart() {
-            swarmBots = []; healerBots = []; mySpawnIndicators = [];
-            swarmSpawnTimer = 0; healerUnlocked = false; healerRespawnTimer = -1;
-
-            bot.isActive = false; bot.isDead = true;
-            bot2.isActive = false; bot2.isDead = true;
-            slimeBots = []; stationaryBots = []; boomerangBots = [];
-            fogBots = []; nests = []; spawnIndicators = [];
-        },
-
-        onUpdate(ts) {
-            slimeTimer = 0; stationaryTimer = 0; boomerangTimer = 0; fogBotTimer = 0;
-            spawnIndicators = [];
-            nests = [];
-
-            // Ana kod her 7 öldürmede bot2'yi aktif etmeye çalışıyor - engelliyoruz
-            bot2.isActive = false; bot2.isDead = true;
-
-            // --- Sürü Botu spawn ---
-            swarmSpawnTimer += ts;
-            if (swarmSpawnTimer >= SWARM_SPAWN_INTERVAL) {
-                swarmSpawnTimer = 0;
-                const p = randSpawnPoint();
-                mySpawnIndicators.push({ x: p.x, y: p.y, timer: SPAWN_WARN_FRAMES, type: 'swarm' });
-            }
-
-            // --- İyileştirici Bot: bot2 mantığı (7 öldürmede aç, ölünce yeniden doğ) ---
-            if (!healerUnlocked && botsKilled >= HEALER_SPAWN_KILL_THRESHOLD) {
-                healerUnlocked = true;
-                const p = randSpawnPoint();
-                mySpawnIndicators.push({ x: p.x, y: p.y, timer: SPAWN_WARN_FRAMES, type: 'healer' });
-            }
-            if (healerRespawnTimer >= 0) {
-                healerRespawnTimer -= ts;
-                if (healerRespawnTimer <= 0) {
-                    healerRespawnTimer = -1;
-                    const p = randSpawnPoint();
-                    healerBots.push(createHealerBot(p.x, p.y));
-                }
-            }
-
-            for (let i = mySpawnIndicators.length - 1; i >= 0; i--) {
-                const ind = mySpawnIndicators[i];
-                ind.timer -= ts;
-                if (ind.timer <= 0) {
-                    if (ind.type === 'swarm') swarmBots.push(createSwarmBot(ind.x, ind.y));
-                    else healerBots.push(createHealerBot(ind.x, ind.y));
-                    mySpawnIndicators.splice(i, 1);
-                }
-            }
-
-            // --- Sürü Botu davranışı ---
-            for (let i = swarmBots.length - 1; i >= 0; i--) {
-                const b = swarmBots[i];
-
-                if (b.hp <= 0 && !b.isDead) {
-                    b.isDead = true;
-                    spawnParticles(b.x, b.y, b.color);
-                    triggerBotKill(b.x, b);
-                }
-                if (b.isDead) { swarmBots.splice(i, 1); continue; }
-
-                let yakinSayisi = 0;
-                getActiveEnemies().forEach(e => {
-                    if (e !== b && getDist(b, e) < SWARM_NEARBY_RADIUS) yakinSayisi++;
-                });
-                b.currentNearbyCount = yakinSayisi;
-                b.speed = SWARM_BASE_SPEED + (yakinSayisi * SWARM_SPEED_BONUS);
-                b.color = lerpColor(SWARM_COLOR_LOW, SWARM_COLOR_HIGH, Math.min(1, yakinSayisi / 5));
-
-                const canSeePlayer = !player.isDead && !player.isInvisible;
-                if (canSeePlayer) {
-                    b.angle = Math.atan2(player.y - b.y, player.x - b.x);
-                    const d = getDist(b, player);
-                    if (d > SWARM_ENGAGE_DIST) {
-                        b.x += Math.cos(b.angle) * b.speed * ts;
-                        b.y += Math.sin(b.angle) * b.speed * ts;
-                    }
-                    if (d < SWARM_SHOOT_RANGE && Date.now() - b.lastShot > b.shootInterval) {
-                        botBullets.push({
-                            x: b.x, y: b.y, sx: b.x, sy: b.y,
-                            vx: Math.cos(b.angle) * BOT_BULLET_SPEED,
-                            vy: Math.sin(b.angle) * BOT_BULLET_SPEED,
-                            type: 'swarm_attack', owner: b
-                        });
-                        b.lastShot = Date.now();
-                    }
-                }
-            }
-
-            // --- İyileştirici Bot davranışı ---
-            for (let i = healerBots.length - 1; i >= 0; i--) {
-                const h = healerBots[i];
-
-                if (h.hp <= 0 && !h.isDead) {
-                    h.isDead = true;
-                    spawnParticles(h.x, h.y, h.color);
-                    triggerBotKill(h.x, h);
-                    healerRespawnTimer = HEALER_RESPAWN_TIME;
-                }
-                if (h.isDead) { healerBots.splice(i, 1); continue; }
-
-                const canSeePlayer = !player.isDead && !player.isInvisible;
-                if (canSeePlayer) {
-                    h.angle = Math.atan2(player.y - h.y, player.x - h.x);
-                    const d = getDist(h, player);
-                    if (d > HEALER_ENGAGE_DIST) {
-                        h.x += Math.cos(h.angle) * h.speed * ts;
-                        h.y += Math.sin(h.angle) * h.speed * ts;
-                    }
-                    if (d < HEALER_SHOOT_RANGE && Date.now() - h.lastShot > h.shootInterval) {
-                        botBullets.push({
-                            x: h.x, y: h.y, sx: h.x, sy: h.y,
-                            vx: Math.cos(h.angle) * BOT_BULLET_SPEED,
-                            vy: Math.sin(h.angle) * BOT_BULLET_SPEED,
-                            type: 'healer_attack', owner: h
-                        });
-                        h.lastShot = Date.now();
-                    }
-                }
-
-                h.healCooldown -= ts;
-                if (h.healCooldown <= 0) {
-                    h.healCooldown = HEALER_HEAL_INTERVAL;
-                    h.pulseFlash = 20;
-                    h.hp = Math.min(h.maxHp, h.hp + HEALER_HEAL_SELF);
-                    addFloatingNumber(h.x, h.y, "+" + HEALER_HEAL_SELF, "#2ecc71");
-                    getActiveEnemies().forEach(e => {
-                        if (e === h) return;
-                        if (getDist(h, e) < HEALER_HEAL_RADIUS && e.hp < e.maxHp) {
-                            e.hp = Math.min(e.maxHp, e.hp + HEALER_HEAL_OTHERS);
-                            addFloatingNumber(e.x, e.y, "+" + HEALER_HEAL_OTHERS, "#2ecc71");
-                        }
-                    });
-                }
-                if (h.pulseFlash > 0) h.pulseFlash -= ts;
-            }
-        },
-
-        onDraw(ctx2) {
-            mySpawnIndicators.forEach(ind => {
-                ctx2.save();
-                ctx2.translate(ind.x, ind.y);
-                ctx2.globalAlpha = Math.abs(Math.sin(Date.now() / 150));
-                ctx2.beginPath(); ctx2.arc(0, 0, 30, 0, Math.PI * 2);
-                ctx2.strokeStyle = '#e74c3c'; ctx2.lineWidth = 4; ctx2.stroke();
-                ctx2.globalAlpha = 1;
-                ctx2.fillStyle = '#e74c3c'; ctx2.font = "bold 16px Arial"; ctx2.textAlign = "center";
-                ctx2.fillText(Math.ceil(ind.timer / 60), 0, 6);
-                ctx2.restore();
-            });
-
-            healerBots.forEach(h => {
-                if (h.pulseFlash > 0) {
-                    ctx2.save();
-                    ctx2.translate(h.x, h.y);
-                    const alpha = (h.pulseFlash / 20) * 0.5;
-                    ctx2.beginPath(); ctx2.arc(0, 0, HEALER_HEAL_RADIUS, 0, Math.PI * 2);
-                    ctx2.fillStyle = `rgba(46, 204, 113, ${alpha * 0.4})`;
-                    ctx2.fill();
-                    ctx2.strokeStyle = `rgba(46, 204, 113, ${alpha})`;
-                    ctx2.lineWidth = 2;
-                    ctx2.stroke();
-                    ctx2.restore();
-                }
-            });
-
-            swarmBots.forEach(b => {
-                const count = Math.min(5, b.currentNearbyCount);
-                if (count > 0) {
-                    const oppositeColor = invertHex(b.color);
-                    ctx2.save();
-                    ctx2.translate(b.x, b.y);
-                    ctx2.beginPath();
-                    ctx2.arc(0, 0, b.radius + 6 + count * 3, 0, Math.PI * 2);
-                    ctx2.strokeStyle = oppositeColor;
-                    ctx2.globalAlpha = 0.3 + count * 0.1;
-                    ctx2.lineWidth = 3;
-                    ctx2.stroke();
-                    ctx2.globalAlpha = 1;
-                    for (let k = 0; k < count; k++) {
-                        const streakAngle = b.angle + Math.PI + (Math.random() - 0.5) * 0.6;
-                        const len = 10 + count * 3;
-                        ctx2.beginPath();
-                        ctx2.moveTo(0, 0);
-                        ctx2.lineTo(Math.cos(streakAngle) * len, Math.sin(streakAngle) * len);
-                        ctx2.strokeStyle = oppositeColor;
-                        ctx2.lineWidth = 2;
-                        ctx2.stroke();
-                    }
-                    ctx2.restore();
-                }
-            });
-
-            swarmBots.forEach(b => drawEntity(b, false));
-            healerBots.forEach(h => drawEntity(h, false));
-
-            healerBots.forEach(h => {
-                ctx2.save();
-                ctx2.translate(h.x, h.y - h.radius - 22);
-                ctx2.beginPath();
-                ctx2.arc(0, 0, 8, 0, Math.PI * 2);
-                ctx2.fillStyle = 'rgba(46, 204, 113, 0.85)';
-                ctx2.fill();
-                ctx2.strokeStyle = '#fff';
-                ctx2.lineWidth = 1.5;
-                ctx2.stroke();
-                ctx2.beginPath();
-                ctx2.arc(-2.5, -2.5, 2, 0, Math.PI * 2);
-                ctx2.fillStyle = 'rgba(255,255,255,0.8)';
-                ctx2.fill();
-                ctx2.restore();
-            });
-        },
-
-        onReset() {
-            swarmBots = []; healerBots = []; mySpawnIndicators = [];
-            swarmSpawnTimer = 0; healerUnlocked = false; healerRespawnTimer = -1;
-        }
-    };
-
-    chainHook('getExtraEnemies', function () {
-        if (window.GAME_MODE !== MOD_ID) return undefined;
-        return swarmBots.concat(healerBots).filter(e => !e.isDead);
-    });
-
-    chainHook('onDraw', function (ctx2) {
-        if (window.GAME_MODE !== MOD_ID) return;
-        window.GAME_EXT.modes[MOD_ID].onDraw(ctx2);
-    });
-
-    const originalUpdateBulletLogic = window.updateBulletLogic;
-    window.updateBulletLogic = function (list, isBot, ts) {
-        if (isBot && window.GAME_MODE === MOD_ID) {
-            for (let i = list.length - 1; i >= 0; i--) {
-                const b = list[i];
-                if (b.type !== 'swarm_attack' && b.type !== 'healer_attack') continue;
-
-                b.x += b.vx * ts; b.y += b.vy * ts;
-
-                const outOfRange = getDist(b, { x: b.sx, y: b.sy }) > RANGE;
-                const hitWall = b.x < WALL_THICKNESS + 5 || b.x > canvas.width - WALL_THICKNESS - 5 ||
-                                 b.y < WALL_THICKNESS + 5 || b.y > canvas.height - WALL_THICKNESS - 5;
-
-                if (!player.isDead && getDist(b, player) < player.radius + 12) {
-                    const dmg = b.type === 'swarm_attack' ? SWARM_DAMAGE : HEALER_DAMAGE;
-                    player.hp -= dmg;
-                    addFloatingNumber(player.x, player.y, dmg, "#e74c3c");
-                    player.lastHitTime = Date.now();
-                    if (player.isInvisible) { player.isInvisible = false; player.invisTimer = 0; }
-                    list.splice(i, 1);
-                    continue;
-                }
-                if (outOfRange || hitWall) {
-                    list.splice(i, 1);
-                }
-            }
-        }
-        originalUpdateBulletLogic(list, isBot, ts);
-    };
-
-    const track = document.getElementById('difficulty-track');
-    if (track && !document.getElementById('diff-mutasyon')) {
+    // ========== KARAKTER KARTI ==========
+    const container = document.querySelector('.char-select-container');
+    if (container && !document.getElementById('char-' + CHAR_ID)) {
         const card = document.createElement('div');
-        card.className = 'diff-card';
-        card.id = 'diff-mutasyon';
+        card.className = 'char-card';
+        card.id = 'char-' + CHAR_ID;
         card.innerHTML =
-            '<span>Mutasyon</span>' +
-            '<small>Sürü Botu + İyileştirici Bot<br>Klasik botlar kapalı</small>';
-        track.appendChild(card);
+            '<div class="char-color-preview" style="background:' + CHAR_COLOR + ';"></div>' +
+            '<span>Kül</span>' +
+            '<small>Hasar: 600+300<br>Aura: Can emme<br>Güç: Aura Patlaması</small>';
+        container.appendChild(card);
         card.addEventListener('click', () => {
-            document.querySelectorAll('.diff-card').forEach(c => c.classList.remove('selected'));
+            selectedCharacter = CHAR_ID;
+            document.querySelectorAll('.char-card').forEach(el => el.classList.remove('selected'));
             card.classList.add('selected');
-            window.GAME_MODE = MOD_ID;
         });
     }
 
+    // ========== setCharacter OVERRIDE ==========
+    const originalSetCharacter = Player.prototype.setCharacter;
+    Player.prototype.setCharacter = function (type) {
+        originalSetCharacter.call(this, type);
+        if (type === CHAR_ID) {
+            // Aura ve ulti state'lerini sıfırla
+            this.kulUltiZamanlayici = 0;
+            this.kulUltiAktif = false;
+            kulMermileri = [];
+            // Butonları ayarla
+            if (gadgetBtn) gadgetBtn.style.display = 'none'; // aksesuar yok şimdilik
+            if (gadgetBtn2) gadgetBtn2.style.display = 'none';
+            if (ultiBtn) ultiBtn.style.display = 'flex';
+        }
+    };
+
+    // ========== FIRE OVERRIDE ==========
+    const originalFire = Player.prototype.fire;
+    Player.prototype.fire = function (a, pullOverride) {
+        if (this.charType !== CHAR_ID) return originalFire.call(this, a, pullOverride);
+        if (this.ammo < 1 || this.isDead) return;
+
+        const fx = this.x, fy = this.y;
+        const sp = PLAYER_BULLET_SPEED * 1.1;
+
+        // İlk mermi: 600 hasar
+        kulMermileri.push({
+            x: fx, y: fy,
+            sx: fx, sy: fy,
+            vx: Math.cos(a) * sp,
+            vy: Math.sin(a) * sp,
+            hasar: ILK_MERMI_HASAR,
+            delmeHakki: 0,          // ilk mermi delmez
+            isDead: false,
+            angle: a,
+            age: 0
+        });
+
+        // İkinci mermi: 300 hasar, 2 düşmanı delebilir, 0.1 saniye sonra
+        setTimeout(() => {
+            if (!gameStarted || this.isDead) return;
+            kulMermileri.push({
+                x: fx, y: fy,
+                sx: fx, sy: fy,
+                vx: Math.cos(a) * sp,
+                vy: Math.sin(a) * sp,
+                hasar: IKINCI_MERMI_HASAR,
+                delmeHakki: IKINCI_MERMI_DELME,
+                isDead: false,
+                angle: a,
+                age: 0
+            });
+        }, MERMI_ARALIK_MS);
+
+        this.consumeAmmo();
+        this.lastShotTime = Date.now();
+    };
+
+    // ========== FIREULTI OVERRIDE ==========
+    const originalFireUlti = Player.prototype.fireUlti;
+    Player.prototype.fireUlti = function (a) {
+        if (this.charType !== CHAR_ID) return originalFireUlti.call(this, a);
+        if (!this.ultReady || this.isDead) return;
+
+        // Anında can ver
+        this.hp = Math.min(this.maxHp, this.hp + ULTI_ANINDA_CAN);
+        addFloatingNumber(this.x, this.y - 30, "+" + ULTI_ANINDA_CAN, "#2ecc71");
+
+        // Zamanlayıcıyı başlat
+        this.kulUltiZamanlayici = ULTI_GECIKME;
+        this.kulUltiAktif = true;
+        addFloatingNumber(this.x, this.y - 40, "KÜL PATLAMASI YAKLAŞIYOR!", CHAR_ACCENT);
+
+        // Ulti barını sıfırla
+        this.ultReady = false;
+        this.ultCharge = 0;
+        if (ultFill) ultFill.style.width = "0%";
+        if (ultiBtn) ultiBtn.classList.remove('ready');
+    };
+
+    // ========== UPDATE (onUpdate hook) ==========
+    chainHook('onUpdate', function (ts) {
+        if (!gameStarted || player.charType !== CHAR_ID) return;
+
+        // Aura can kazanımı
+        let toplamCan = 0;
+        getActiveEnemies().forEach(e => {
+            if (getDist(player, e) <= AURA_YARICAP + e.radius) {
+                toplamCan += (AURA_CAN_KAZANIM / 60) * ts;
+            }
+        });
+        if (toplamCan > 0) {
+            player.hp = Math.min(player.maxHp, player.hp + toplamCan);
+            // Toplu can yazısını her 30 frame'de bir göster
+            if (!player._kulCanYazisiZaman || Date.now() - player._kulCanYazisiZaman > 500) {
+                addFloatingNumber(player.x, player.y - 20, "+" + Math.floor(toplamCan * 10) / 10, "#2ecc71");
+                player._kulCanYazisiZaman = Date.now();
+            }
+        }
+
+        // Ulti gecikmesi
+        if (player.kulUltiAktif) {
+            player.kulUltiZamanlayici -= ts;
+            if (player.kulUltiZamanlayici <= 0) {
+                player.kulUltiAktif = false;
+                patlatAura();
+            }
+        }
+
+        // Kendi mermilerimizi güncelle
+        for (let i = kulMermileri.length - 1; i >= 0; i--) {
+            const m = kulMermileri[i];
+            if (m.isDead) { kulMermileri.splice(i, 1); continue; }
+
+            m.age += ts;
+            m.x += m.vx * ts;
+            m.y += m.vy * ts;
+
+            // Menzil kontrolü
+            if (getDist({x: m.sx, y: m.sy}, m) > SALDIRI_MENZILI) {
+                m.isDead = true;
+                continue;
+            }
+
+            // Duvar kontrolü
+            if (m.x < WALL_THICKNESS + 5 || m.x > canvas.width - WALL_THICKNESS - 5 ||
+                m.y < WALL_THICKNESS + 5 || m.y > canvas.height - WALL_THICKNESS - 5) {
+                m.isDead = true;
+                continue;
+            }
+
+            // Engel kontrolü
+            let hitObs = false;
+            for (const o of obstacles.concat(cactusWalls || [])) {
+                if (getDist(m, o) < o.radius + 6) {
+                    hitObs = true;
+                    break;
+                }
+            }
+            if (hitObs) { m.isDead = true; continue; }
+
+            // Düşman çarpışma
+            let hedefVuruldu = false;
+            getActiveEnemies().forEach(e => {
+                if (m.isDead || hedefVuruldu) return;
+                if (getDist(m, e) < e.radius + 8) {
+                    e.hp -= m.hasar;
+                    addFloatingNumber(e.x, e.y, m.hasar, CHAR_ACCENT);
+                    if (m.delmeHakki > 0) {
+                        m.delmeHakki--;
+                        // Delme: hedefi atla, devam et
+                        // Basitçe bir hedef listesi tutabiliriz ama şimdilik sadece birini vurup devam
+                        hedefVuruldu = false; // delme var, başka düşmana da çarpabilir
+                        // Ancak aynı düşmana tekrar vurmamak için hitTargets gerekir
+                        // Basitlik için şimdilik delme hakkı kadar farklı düşmana vurabilir
+                        // Bunun için m.hitTargets ekliyoruz
+                        if (!m.hitTargets) m.hitTargets = [];
+                        m.hitTargets.push(e);
+                    } else {
+                        hedefVuruldu = true;
+                        m.isDead = true;
+                    }
+                }
+            });
+            // Delme varsa ve hedef listesi varsa, vurulanları takip et
+        }
+    });
+
+    // ========== RESET HOOK ==========
+    chainHook('onReset', function () {
+        kulMermileri = [];
+        if (player) {
+            player.kulUltiAktif = false;
+            player.kulUltiZamanlayici = 0;
+        }
+    });
+
+    // ========== DRAW HOOK ==========
+    chainHook('onDraw', function (ctx2) {
+        if (!gameStarted || player.charType !== CHAR_ID) return;
+
+        // Aura çizimi
+        const auraAlpha = 0.2 + Math.sin(Date.now() / 300) * 0.05;
+        ctx2.save();
+        ctx2.translate(player.x, player.y);
+        ctx2.beginPath();
+        ctx2.arc(0, 0, AURA_YARICAP, 0, Math.PI * 2);
+        ctx2.fillStyle = `rgba(211, 84, 0, ${auraAlpha})`;
+        ctx2.fill();
+        ctx2.strokeStyle = `rgba(211, 84, 0, 0.6)`;
+        ctx2.lineWidth = 2;
+        ctx2.stroke();
+        // İç halka
+        ctx2.beginPath();
+        ctx2.arc(0, 0, AURA_YARICAP * 0.7, 0, Math.PI * 2);
+        ctx2.strokeStyle = `rgba(211, 84, 0, 0.3)`;
+        ctx2.lineWidth = 1;
+        ctx2.stroke();
+        ctx2.restore();
+
+        // Mermileri çiz
+        kulMermileri.forEach(m => {
+            ctx2.save();
+            ctx2.translate(m.x, m.y);
+            ctx2.rotate(m.angle);
+            ctx2.fillStyle = m.delmeHakki > 0 ? CHAR_ACCENT : '#a04000';
+            ctx2.beginPath();
+            ctx2.arc(0, 0, 5, 0, Math.PI * 2);
+            ctx2.fill();
+            // Küçük iz
+            ctx2.fillStyle = 'rgba(255,255,255,0.3)';
+            ctx2.beginPath();
+            ctx2.arc(2, 0, 2, 0, Math.PI * 2);
+            ctx2.fill();
+            ctx2.restore();
+        });
+
+        // Ulti yaklaşırken uyarı
+        if (player.kulUltiAktif) {
+            const kalan = player.kulUltiZamanlayici / 60;
+            ctx2.save();
+            ctx2.translate(player.x, player.y);
+            ctx2.globalAlpha = 0.7;
+            ctx2.beginPath();
+            ctx2.arc(0, 0, AURA_YARICAP + 20, 0, Math.PI * 2);
+            ctx2.strokeStyle = '#e74c3c';
+            ctx2.lineWidth = 3;
+            ctx2.stroke();
+            ctx2.globalAlpha = 1;
+            ctx2.fillStyle = '#e74c3c';
+            ctx2.font = "bold 14px Arial";
+            ctx2.textAlign = "center";
+            ctx2.fillText(kalan.toFixed(1), 0, -AURA_YARICAP - 25);
+            ctx2.restore();
+        }
+    });
+
+    // ========== PATLAMA FONKSİYONU ==========
+    function patlatAura() {
+        const p = player;
+        // Görsel efekt
+        explosions.push({x: p.x, y: p.y, radius: 10, maxRadius: ULTI_PATLAMA_YARICAP, life: 15, maxLife: 15});
+        for (let k = 0; k < 12; k++) {
+            const ang = Math.random() * Math.PI * 2;
+            const dist = Math.random() * ULTI_PATLAMA_YARICAP;
+            spawnParticles(p.x + Math.cos(ang) * dist, p.y + Math.sin(ang) * dist, CHAR_ACCENT, 'normal');
+        }
+        screenShake = 10;
+        addFloatingNumber(p.x, p.y - 30, "KÜL PATLAMASI!", CHAR_ACCENT);
+
+        // Hasar ve savurma
+        getActiveEnemies().forEach(e => {
+            const d = getDist(p, e);
+            if (d <= ULTI_PATLAMA_YARICAP + e.radius) {
+                e.hp -= ULTI_PATLAMA_HASAR;
+                addFloatingNumber(e.x, e.y, ULTI_PATLAMA_HASAR, "#e74c3c");
+                const ang = getAngle(p, e);
+                e.kbX = Math.cos(ang) * ULTI_SAVURMA;
+                e.kbY = Math.sin(ang) * ULTI_SAVURMA;
+            }
+        });
+    }
+
+    console.log('[MOD YÜKLENDİ]', CHAR_ID);
 })();
