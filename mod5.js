@@ -22,6 +22,7 @@
     const IKINCI_MERMI_HASAR = 300;
     const IKINCI_MERMI_DELME = 2;          // kaç düşmanı delebilir
     const MERMI_ARALIK_MS = 100;           // 0.1 saniye
+    const MERMI_BOYUT = 8;                // mermi yarıçapı (artırıldı)
 
     // Aura
     const AURA_YARICAP = 70;
@@ -172,9 +173,9 @@
         });
         if (toplamCan > 0) {
             player.hp = Math.min(player.maxHp, player.hp + toplamCan);
-            // Toplu can yazısını her 30 frame'de bir göster
-            if (!player._kulCanYazisiZaman || Date.now() - player._kulCanYazisiZaman > 500) {
-                addFloatingNumber(player.x, player.y - 20, "+" + Math.floor(toplamCan * 10) / 10, "#2ecc71");
+            // Saniyede bir toplam kazancı göster (bot başı 100 can/sn)
+            if (!player._kulCanYazisiZaman || Date.now() - player._kulCanYazisiZaman > 1000) {
+                addFloatingNumber(player.x, player.y - 20, "+" + Math.floor(toplamCan * 60), "#2ecc71");
                 player._kulCanYazisiZaman = Date.now();
             }
         }
@@ -230,11 +231,8 @@
                     if (m.delmeHakki > 0) {
                         m.delmeHakki--;
                         // Delme: hedefi atla, devam et
-                        // Basitçe bir hedef listesi tutabiliriz ama şimdilik sadece birini vurup devam
                         hedefVuruldu = false; // delme var, başka düşmana da çarpabilir
-                        // Ancak aynı düşmana tekrar vurmamak için hitTargets gerekir
-                        // Basitlik için şimdilik delme hakkı kadar farklı düşmana vurabilir
-                        // Bunun için m.hitTargets ekliyoruz
+                        // Aynı düşmana tekrar vurmamak için hitTargets
                         if (!m.hitTargets) m.hitTargets = [];
                         m.hitTargets.push(e);
                     } else {
@@ -243,7 +241,7 @@
                     }
                 }
             });
-            // Delme varsa ve hedef listesi varsa, vurulanları takip et
+            // Eğer delme bitti ama hâlâ hayattaysa, m.isDead zaten true yapıldı
         }
     });
 
@@ -279,19 +277,19 @@
         ctx2.stroke();
         ctx2.restore();
 
-        // Mermileri çiz
+        // Mermileri çiz (boyut artırıldı)
         kulMermileri.forEach(m => {
             ctx2.save();
             ctx2.translate(m.x, m.y);
             ctx2.rotate(m.angle);
             ctx2.fillStyle = m.delmeHakki > 0 ? CHAR_ACCENT : '#a04000';
             ctx2.beginPath();
-            ctx2.arc(0, 0, 5, 0, Math.PI * 2);
+            ctx2.arc(0, 0, MERMI_BOYUT, 0, Math.PI * 2); // artırılmış boyut
             ctx2.fill();
             // Küçük iz
             ctx2.fillStyle = 'rgba(255,255,255,0.3)';
             ctx2.beginPath();
-            ctx2.arc(2, 0, 2, 0, Math.PI * 2);
+            ctx2.arc(2, 0, MERMI_BOYUT * 0.4, 0, Math.PI * 2);
             ctx2.fill();
             ctx2.restore();
         });
@@ -313,6 +311,45 @@
             ctx2.textAlign = "center";
             ctx2.fillText(kalan.toFixed(1), 0, -AURA_YARICAP - 25);
             ctx2.restore();
+        }
+    });
+
+    // ========== NİŞAN ÇİZGİSİ (Özel) ==========
+    // Kül'ün menzili kısa olduğu için ana oyunun standart uzun çizgisi uygun değil.
+    // Taşçı'daki gibi onPreDraw/onAimDraw/onPostDraw kullanarak kısa menzil çizgisi çiziyoruz.
+    chainHook('onPreDraw', function (ctx2) {
+        if (player.charType === CHAR_ID && aimData.active && !player.isDead) {
+            player._kulAimGeriGetir = true;
+            aimData.active = false;
+        }
+    });
+
+    chainHook('onAimDraw', function (ctx2) {
+        if (player.charType === CHAR_ID && player._kulAimGeriGetir && player.ammo >= 1 && !player.isDead) {
+            ctx2.save();
+            ctx2.translate(player.x, player.y);
+            ctx2.rotate(aimData.angle);
+            // Kısa menzil çizgisi
+            ctx2.fillStyle = 'rgba(211, 84, 0, 0.15)';
+            ctx2.fillRect(0, -5, SALDIRI_MENZILI, 10);
+            ctx2.strokeStyle = 'rgba(211, 84, 0, 0.8)';
+            ctx2.lineWidth = 2;
+            ctx2.setLineDash([5, 5]);
+            ctx2.strokeRect(0, -5, SALDIRI_MENZILI, 10);
+            ctx2.setLineDash([]);
+            // Hedef noktası
+            ctx2.beginPath();
+            ctx2.arc(SALDIRI_MENZILI, 0, 6, 0, Math.PI * 2);
+            ctx2.fillStyle = CHAR_ACCENT;
+            ctx2.fill();
+            ctx2.restore();
+        }
+    });
+
+    chainHook('onPostDraw', function (ctx2) {
+        if (player._kulAimGeriGetir) {
+            aimData.active = true;
+            player._kulAimGeriGetir = false;
         }
     });
 
