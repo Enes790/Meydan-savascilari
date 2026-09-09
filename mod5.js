@@ -3,8 +3,8 @@
 // - Aura: 94 birim yarıçap, hasar vermez, içindeki her düşman başına
 //   saniyede 200 can kazandırır. Çok hafif görünür, göz yormaz.
 // - Aura her can aldığında hafifçe parlar (animasyonlu).
-// - Ulti: anında 200 can verir, 1 saniye sonra aura patlar,
-//   1000 hasar + Buz Botu kadar savurma.
+// - Ulti: anında 200 can verir, 1.5 saniye hasar almaz,
+//   sonra aura patlar, 1000 hasar + Buz Botu kadar savurma.
 // - Tema: sıcaklık / kül. Renk: koyu gri-turuncu.
 // - Mimari: IIFE içinde, zincirleme hook'lar, bağımsız mermi dizisi.
 
@@ -14,7 +14,7 @@
     const CHAR_ID = 'kul';
     const CHAR_COLOR = '#4a4a4a';
     const CHAR_ACCENT = '#d35400';
-    const CHAR_HP = 2800;
+    const CHAR_HP = 3300; // 500 eklendi (2800 + 500)
     const CHAR_SPEED = 3.8;
 
     // Saldırı
@@ -23,15 +23,15 @@
     const IKINCI_MERMI_HASAR = 300;
     const IKINCI_MERMI_DELME = 2;
     const MERMI_ARALIK_MS = 100;
-    const MERMI_HIZ = PLAYER_BULLET_SPEED * 0.8; // biraz hızlandı
+    const MERMI_HIZ = PLAYER_BULLET_SPEED * 0.8;
 
     // Aura
-    const AURA_YARICAP = 94; // 85'in %10 fazlası
-    const AURA_CAN_KAZANIM = 200; // bot başına saniyede 200
+    const AURA_YARICAP = 94;
+    const AURA_CAN_KAZANIM = 200;
 
     // Ulti
     const ULTI_ANINDA_CAN = 200;
-    const ULTI_GECIKME = 60;
+    const ULTI_GECIKME = 90; // 1.5 saniye (60 frame * 1.5)
     const ULTI_PATLAMA_HASAR = 1000;
     const ULTI_SAVURMA = 40;
     const ULTI_PATLAMA_YARICAP = 100;
@@ -87,10 +87,15 @@
             this.kulUltiZamanlayici = 0;
             this.kulUltiAktif = false;
             this.kulAuraPulse = 0;
+            this.kulHasarAlmazlik = 0;
             kulMermileri = [];
             if (gadgetBtn) gadgetBtn.style.display = 'none';
             if (gadgetBtn2) gadgetBtn2.style.display = 'none';
-            if (ultiBtn) ultiBtn.style.display = 'flex'; // ulti buton görünür
+            if (ultiBtn) ultiBtn.style.display = 'flex';
+            this.ultCharge = 0;
+            this.ultReady = false;
+            if (ultFill) ultFill.style.width = "0%";
+            if (ultiBtn) ultiBtn.classList.remove('ready');
         }
     };
 
@@ -142,9 +147,14 @@
         if (this.charType !== CHAR_ID) return originalFireUlti.call(this, a);
         if (!this.ultReady || this.isDead) return;
 
+        // Anında can ver
         this.hp = Math.min(this.maxHp, this.hp + ULTI_ANINDA_CAN);
         addFloatingNumber(this.x, this.y - 30, "+" + ULTI_ANINDA_CAN, "#2ecc71");
         this.kulAuraPulse = 1.0;
+
+        // 1.5 saniye hasar almazlık
+        this.kulHasarAlmazlik = ULTI_GECIKME;
+        this.jumpInvulnerable = true; // ana oyunun genel dokunulmazlık bayrağı
 
         this.kulUltiZamanlayici = ULTI_GECIKME;
         this.kulUltiAktif = true;
@@ -155,6 +165,18 @@
         if (ultFill) ultFill.style.width = "0%";
         if (ultiBtn) ultiBtn.classList.remove('ready');
     };
+
+    // ========== ULTİ DOLDURMA (hook ile) ==========
+    chainHook('onChargeUlti', function (amount) {
+        if (!gameStarted || player.charType !== CHAR_ID || player.ultReady) return;
+        player.ultCharge = Math.min(100, player.ultCharge + amount);
+        if (player.ultCharge >= 100) {
+            player.ultReady = true;
+            if (ultiBtn) ultiBtn.classList.add('ready');
+            addFloatingNumber(player.x, player.y - 40, "GÜÇ HAZIR!", "#f1c40f");
+        }
+        if (ultFill) ultFill.style.width = player.ultCharge + "%";
+    });
 
     // ========== UPDATE ==========
     chainHook('onUpdate', function (ts) {
@@ -182,6 +204,15 @@
         } else {
             if (player.kulAuraPulse > 0) {
                 player.kulAuraPulse = Math.max(0, player.kulAuraPulse - 0.02);
+            }
+        }
+
+        // Hasar almazlık süresi azalsın
+        if (player.kulHasarAlmazlik > 0) {
+            player.kulHasarAlmazlik -= ts;
+            if (player.kulHasarAlmazlik <= 0) {
+                player.kulHasarAlmazlik = 0;
+                player.jumpInvulnerable = false;
             }
         }
 
@@ -244,6 +275,8 @@
             player.kulUltiAktif = false;
             player.kulUltiZamanlayici = 0;
             player.kulAuraPulse = 0;
+            player.kulHasarAlmazlik = 0;
+            player.jumpInvulnerable = false;
         }
     });
 
@@ -251,9 +284,9 @@
     chainHook('onDraw', function (ctx2) {
         if (!gameStarted || player.charType !== CHAR_ID) return;
 
-        // Aura: ÇOK HAFİF, göz yormaz. Merkezden dışa saydamlaşır.
+        // Aura: ÇOK HAFİF
         const pulse = player.kulAuraPulse || 0;
-        const auraAlpha = 0.08 + pulse * 0.08; // çok düşük opaklık
+        const auraAlpha = 0.08 + pulse * 0.08;
         const grad = ctx2.createRadialGradient(
             player.x, player.y, AURA_YARICAP * 0.1,
             player.x, player.y, AURA_YARICAP
@@ -268,7 +301,7 @@
         ctx2.fill();
         ctx2.restore();
 
-        // Mermiler: Devko mermisine benzer uzun ok şekli
+        // Mermiler
         kulMermileri.forEach(m => {
             ctx2.save();
             ctx2.translate(m.x, m.y);
