@@ -1,11 +1,13 @@
 // ========== mod10.js (TURUNCU BASKIN) ==========
-// - Turuncu bot: Klasik stationary tipi, sınırsız menzil, ölünce 6 sn sonra
-//   ciritçi gibi spawn olur. Küçük ama detaylı görünüm.
-// - Mermi Slime: Klasik slime gibi çoğalır/evrimleşir. Ateş etmez, ama
-//   canı 0 olunca 4 açılı mermi bırakır (temasla ölürse bırakmaz).
-//   Mermiler menzilli, hafif eğim alır, sipere 50 hasar verir.
-//   Mermi hasarı boyuta göre: büyük=100, orta=50, küçük=30.
-// - Siperler gri, canı 2.5 kat (2000).
+// - Turuncu bot: Klasik stationary tipi, sınırsız menzil, ciritçi gibi spawn.
+// - Turuncu Slime: Orijinal slime mekaniğinin turuncu versiyonu.
+//   * Büyük spawn olur, ölünce 2 orta, orta ölünce 2 küçük, küçük tamamen ölür.
+//   * Zamanla evrim YOK (orijinalde de yok).
+//   * Görünüm: göz yok, iki iç içe turuncu daire, içteki öne kaymış.
+//   * Her bölünmede/ölümde 4 mermi bırakır (temasla ölürse bırakmaz).
+//   * Mermiler açılı, hafif eğim alır, menzilli, sipere 50 hasar.
+//   * Mermi hasarı boyuta göre: büyük 100, orta 50, küçük 30.
+// - Siperler gri, can 2.5 kat (2000).
 
 (function () {
     'use strict';
@@ -19,29 +21,22 @@
     const BOT_RESPAWN_SURESI = 360;
     const BOT_SPAWN_WARN = 180;
 
-    // ---- Mermi Slime ----
-    const SLIME_HP_BUYUK = 1800;
-    const SLIME_HP_ORTA = 900;
-    const SLIME_HP_KUCUK = 400;
-    const SLIME_RADIUS_BUYUK = 30;
-    const SLIME_RADIUS_ORTA = 20;
-    const SLIME_RADIUS_KUCUK = 12;
-    const SLIME_SPEED = 1.2;
-    const SLIME_SPAWN_INTERVAL = 900; // 15 saniye
-    const SLIME_MAX = 6;
-    const SLIME_SPAWN_WARN = 180;
+    // ---- Turuncu Slime (orijinal slime mantığı) ----
+    const SLIME_HP = 700;                       // orijinalde hepsi 700
+    const SLIME_RADIUS = { 0: 30, 1: 20, 2: 12 }; // stage 0=büyük, 1=orta, 2=küçük
+    const SLIME_SPEED = 1.0;
     const SLIME_TEMAS_HASAR = 200;
-    const SLIME_EVRIM_SURESI = 1200; // 20 saniye sonra evrimleşir
+    const SLIME_SPAWN_INTERVAL = 960;           // 16 saniye
+    const SLIME_MAX = 6;                         // ekranda max 6 slime
+    const SLIME_SPAWN_WARN = 180;                // 3 saniye uyarı
 
-    // Slime ölünce çıkan mermiler
+    // Slime mermi özellikleri
     const SLIME_MERMI_SAYISI = 4;
     const SLIME_MERMI_HIZ = BOT_BULLET_SPEED * 0.5;
     const SLIME_MERMI_MENZIL = 350;
-    const SLIME_MERMI_EGIM = 0.03; // radyan/frame, hafif takip
+    const SLIME_MERMI_EGIM = 0.03;              // radyan/frame
     const SLIME_MERMI_SIPER_HASAR = 50;
-    const SLIME_MERMI_HASAR_BUYUK = 100;
-    const SLIME_MERMI_HASAR_ORTA = 50;
-    const SLIME_MERMI_HASAR_KUCUK = 30;
+    const SLIME_MERMI_HASAR = { 0: 100, 1: 50, 2: 30 }; // stage'e göre hasar
 
     // Siper
     const SIPER_CAN = 2000;
@@ -64,8 +59,7 @@
             turuncuBot = null;
             respawnTimer = 0;
             spawnUyariTimer = 0;
-            spawnX = 0;
-            spawnY = 0;
+            spawnX = 0; spawnY = 0;
             slimeBotlar = [];
             slimeSpawnTimer = 0;
             slimeSpawnUyarilari = [];
@@ -73,12 +67,9 @@
 
             bot.isActive = false; bot.isDead = true;
             bot2.isActive = false; bot2.isDead = true;
-            slimeBots = [];
-            stationaryBots = [];
-            boomerangBots = [];
-            fogBots = [];
-            nests = [];
-            spawnIndicators = [];
+            slimeBots = []; stationaryBots = [];
+            boomerangBots = []; fogBots = [];
+            nests = []; spawnIndicators = [];
 
             obstacles.forEach(o => {
                 o.maxHp = SIPER_CAN;
@@ -150,7 +141,8 @@
 
             // ---- Slime spawn ----
             slimeSpawnTimer += ts;
-            if (slimeSpawnTimer >= SLIME_SPAWN_INTERVAL && slimeBotlar.length < SLIME_MAX) {
+            // Toplam slime sayısı 6'yı geçmesin (uyarılar dahil)
+            if (slimeSpawnTimer >= SLIME_SPAWN_INTERVAL && (slimeBotlar.length + slimeSpawnUyarilari.length) < SLIME_MAX) {
                 slimeSpawnTimer = 0;
                 const x = Math.random() * (canvas.width - 200) + 100;
                 const y = Math.random() * (canvas.height - 200) + 100;
@@ -161,7 +153,7 @@
                 const u = slimeSpawnUyarilari[i];
                 u.timer -= ts;
                 if (u.timer <= 0) {
-                    slimeDogur(u.x, u.y, 'kucuk');
+                    slimeDogur(u.x, u.y, 0); // 0 = büyük
                     slimeSpawnUyarilari.splice(i, 1);
                 }
             }
@@ -171,35 +163,34 @@
                 const s = slimeBotlar[i];
                 if (s.isDead) { slimeBotlar.splice(i, 1); continue; }
 
-                // Can kontrolü
+                // Can kontrolü (Ders 6)
                 if (s.hp <= 0) {
                     s.isDead = true;
                     const temaslaOldu = s.temaslaOldu || false;
+
+                    // Temasla ölmediyse mermi bırak
                     if (!temaslaOldu) {
                         slimeMermiBirak(s);
                     }
-                    // Çoğalma
-                    if (s.boyut !== 'kucuk') {
-                        slimeDogur(s.x + 15, s.y + 15, s.boyut === 'buyuk' ? 'orta' : 'kucuk');
-                        slimeDogur(s.x - 15, s.y - 15, s.boyut === 'buyuk' ? 'orta' : 'kucuk');
+
+                    // Bölünme (orijinal mantık)
+                    if (s.stage === 0) {
+                        // Büyük → 2 orta
+                        slimeDogur(s.x + 15, s.y + 15, 1);
+                        slimeDogur(s.x - 15, s.y - 15, 1);
+                    } else if (s.stage === 1) {
+                        // Orta → 2 küçük
+                        slimeDogur(s.x + 15, s.y + 15, 2);
+                        slimeDogur(s.x - 15, s.y - 15, 2);
                     }
+                    // Küçük (stage 2) → bölünme yok
+
                     triggerBotKill(s.x, s);
                     spawnParticles(s.x, s.y, s.color);
                     continue;
                 }
 
-                // Evrim
-                s.evrımTimer = (s.evrımTimer || 0) + ts;
-                if (s.evrımTimer >= SLIME_EVRIM_SURESI && s.boyut !== 'buyuk') {
-                    s.evrımTimer = 0;
-                    s.boyut = s.boyut === 'kucuk' ? 'orta' : 'buyuk';
-                    s.hp = s.boyut === 'buyuk' ? SLIME_HP_BUYUK : SLIME_HP_ORTA;
-                    s.maxHp = s.hp;
-                    s.radius = s.boyut === 'buyuk' ? SLIME_RADIUS_BUYUK : SLIME_RADIUS_ORTA;
-                    addFloatingNumber(s.x, s.y - 20, "BÜYÜDÜ!", "#2ecc71");
-                }
-
-                // Hareket (oyuncuya doğru)
+                // Hareket (oyuncuya doğru, görünmezse durur)
                 const canSee = !player.isDead && !player.isInvisible;
                 if (canSee) {
                     s.angle = Math.atan2(player.y - s.y, player.x - s.x);
@@ -217,7 +208,7 @@
                 s.y = clampPos(s.y, s.radius + WALL_THICKNESS, canvas.height - s.radius - WALL_THICKNESS);
                 resolveObstacleCollision(s);
 
-                // Temas hasarı
+                // Temas hasarı (orijinal: 200 hasar, kendini yok eder)
                 if (!player.isDead && getDist(s, player) < s.radius + player.radius) {
                     player.hp -= SLIME_TEMAS_HASAR;
                     addFloatingNumber(player.x, player.y, SLIME_TEMAS_HASAR, "#e74c3c");
@@ -237,7 +228,6 @@
                     const hedefAci = Math.atan2(player.y - m.y, player.x - m.x);
                     const mevcutAci = Math.atan2(m.vy, m.vx);
                     let fark = hedefAci - mevcutAci;
-                    // Açıyı -PI ile +PI arasına normalize et
                     while (fark > Math.PI) fark -= Math.PI * 2;
                     while (fark < -Math.PI) fark += Math.PI * 2;
                     const yeniAci = mevcutAci + Math.max(-SLIME_MERMI_EGIM, Math.min(SLIME_MERMI_EGIM, fark)) * ts;
@@ -249,10 +239,10 @@
                 m.x += m.vx * ts;
                 m.y += m.vy * ts;
                 m.life -= ts;
-                m.menzilKalan -= Math.hypot(m.vx, m.vy) * ts;
 
-                // Menzil veya ömür bitti
-                if (m.life <= 0 || m.menzilKalan <= 0) {
+                // Ömür veya menzil bitti
+                const mesafe = Math.hypot(m.x - m.sx, m.y - m.sy);
+                if (m.life <= 0 || mesafe > SLIME_MERMI_MENZIL) {
                     m.isDead = true; continue;
                 }
                 // Duvar
@@ -314,44 +304,39 @@
         spawnParticles(turuncuBot.x, turuncuBot.y, '#e67e22', 'smoke');
     }
 
-    function slimeDogur(x, y, boyut) {
-        let hp, radius, hasar;
-        if (boyut === 'buyuk') { hp = SLIME_HP_BUYUK; radius = SLIME_RADIUS_BUYUK; hasar = SLIME_MERMI_HASAR_BUYUK; }
-        else if (boyut === 'orta') { hp = SLIME_HP_ORTA; radius = SLIME_RADIUS_ORTA; hasar = SLIME_MERMI_HASAR_ORTA; }
-        else { hp = SLIME_HP_KUCUK; radius = SLIME_RADIUS_KUCUK; hasar = SLIME_MERMI_HASAR_KUCUK; }
+    // stage: 0=büyük, 1=orta, 2=küçük
+    function slimeDogur(x, y, stage) {
+        const radius = SLIME_RADIUS[stage];
         slimeBotlar.push({
             x, y, radius,
-            hp, maxHp: hp,
+            stage: stage,
+            hp: SLIME_HP, maxHp: SLIME_HP,
             speed: SLIME_SPEED,
             angle: 0, isDead: false, isActive: true,
-            color: '#27ae60',
-            boyut: boyut,
-            merMikHasari: hasar,
-            evrımTimer: 0,
+            color: '#e67e22',
             kbX: 0, kbY: 0,
             temaslaOldu: false
         });
     }
 
     function slimeMermiBirak(s) {
-        // 4 mermi, açılı (slime'ın baktığı yöne doğru yayılmış)
         const tabanAci = s.angle;
-        const yayilma = Math.PI / 3; // 60 derece toplam yayılım
+        const yayilma = Math.PI / 3; // 60 derece
+        const hasar = SLIME_MERMI_HASAR[s.stage];
         for (let i = 0; i < SLIME_MERMI_SAYISI; i++) {
             const a = tabanAci - yayilma / 2 + (yayilma / (SLIME_MERMI_SAYISI - 1)) * i;
             slimeMermileri.push({
                 x: s.x, y: s.y,
+                sx: s.x, sy: s.y,
                 vx: Math.cos(a) * SLIME_MERMI_HIZ,
                 vy: Math.sin(a) * SLIME_MERMI_HIZ,
                 radius: 8,
-                hasar: s.merMikHasari,
+                hasar: hasar,
                 life: 8,
-                menzilKalan: SLIME_MERMI_MENZIL,
                 isDead: false
             });
         }
-        addFloatingNumber(s.x, s.y - 20, "MERMİ!", "#27ae60");
-        spawnParticles(s.x, s.y, '#27ae60', 'smoke');
+        addFloatingNumber(s.x, s.y - 20, "MERMİ!", "#e67e22");
     }
 
     // ========== DÜŞMAN LİSTESİNE EKLE ==========
@@ -410,18 +395,18 @@
             ctx2.globalAlpha = Math.abs(Math.sin(Date.now() / 150));
             ctx2.beginPath();
             ctx2.arc(0, 0, 25, 0, Math.PI * 2);
-            ctx2.strokeStyle = '#27ae60';
+            ctx2.strokeStyle = '#e67e22';
             ctx2.lineWidth = 3;
             ctx2.stroke();
             ctx2.globalAlpha = 1;
-            ctx2.fillStyle = '#27ae60';
+            ctx2.fillStyle = '#e67e22';
             ctx2.font = "bold 14px Arial";
             ctx2.textAlign = "center";
             ctx2.fillText(Math.ceil(u.timer / 60), 0, 5);
             ctx2.restore();
         });
 
-        // Turuncu bot (küçük ama detaylı)
+        // Turuncu bot
         if (turuncuBot && !turuncuBot.isDead) {
             const b = turuncuBot;
             ctx2.save();
@@ -431,7 +416,6 @@
             ctx2.fillStyle = '#2ecc71';
             ctx2.fillRect(-b.radius, -b.radius - 12, b.radius * 2 * (b.hp / b.maxHp), 5);
             ctx2.rotate(b.angle);
-            // Gövde
             ctx2.fillStyle = '#e67e22';
             ctx2.beginPath();
             ctx2.arc(0, 0, b.radius, 0, Math.PI * 2);
@@ -439,7 +423,7 @@
             ctx2.strokeStyle = '#a04000';
             ctx2.lineWidth = 2;
             ctx2.stroke();
-            // Zırh plakası (üst yarı)
+            // Zırh plakası
             ctx2.fillStyle = '#d35400';
             ctx2.beginPath();
             ctx2.arc(0, 0, b.radius * 0.75, -Math.PI * 0.7, Math.PI * 0.7);
@@ -447,7 +431,7 @@
             // Namlu
             ctx2.fillStyle = '#5d4037';
             ctx2.fillRect(b.radius - 2, -3, 10, 6);
-            // Gözler (parlak turuncu)
+            // Parlayan gözler
             ctx2.shadowColor = '#f39c12';
             ctx2.shadowBlur = 6;
             ctx2.fillStyle = '#fff5e1';
@@ -464,42 +448,36 @@
             ctx2.restore();
         }
 
-        // Slime'lar
+        // Turuncu Slime'lar (orijinal slime görünümü, turuncu)
         slimeBotlar.forEach(s => {
             if (s.isDead) return;
             ctx2.save();
             ctx2.translate(s.x, s.y);
             // Can barı
-            ctx2.fillStyle = '#e74c3c';
             const barW = s.radius * 2;
+            ctx2.fillStyle = '#e74c3c';
             ctx2.fillRect(-barW / 2, -s.radius - 12, barW, 4);
             ctx2.fillStyle = '#2ecc71';
             ctx2.fillRect(-barW / 2, -s.radius - 12, barW * (s.hp / s.maxHp), 4);
-            // Gövde
+
+            // Baktığı yöne döndür
             ctx2.rotate(s.angle);
-            ctx2.fillStyle = '#27ae60';
+
+            // Dış daire (gövde) - turuncu
+            ctx2.fillStyle = '#e67e22';
             ctx2.beginPath();
             ctx2.arc(0, 0, s.radius, 0, Math.PI * 2);
             ctx2.fill();
-            ctx2.strokeStyle = '#1e8449';
+            ctx2.strokeStyle = '#a04000';
             ctx2.lineWidth = 2;
             ctx2.stroke();
-            // Parlak üst kısım
-            ctx2.fillStyle = 'rgba(46, 204, 113, 0.5)';
+
+            // İç daire (öne kaymış, koyu turuncu) - yön göstergesi
+            ctx2.fillStyle = '#a04000';
             ctx2.beginPath();
-            ctx2.arc(0, -s.radius * 0.3, s.radius * 0.5, 0, Math.PI * 2);
+            ctx2.arc(s.radius * 0.4, 0, s.radius * 0.55, 0, Math.PI * 2);
             ctx2.fill();
-            // Gözler
-            ctx2.fillStyle = '#fff';
-            ctx2.beginPath();
-            ctx2.arc(s.radius * 0.3, -s.radius * 0.3, s.radius * 0.18, 0, Math.PI * 2);
-            ctx2.arc(s.radius * 0.3, s.radius * 0.3, s.radius * 0.18, 0, Math.PI * 2);
-            ctx2.fill();
-            ctx2.fillStyle = '#0a0a0a';
-            ctx2.beginPath();
-            ctx2.arc(s.radius * 0.35, -s.radius * 0.3, s.radius * 0.08, 0, Math.PI * 2);
-            ctx2.arc(s.radius * 0.35, s.radius * 0.3, s.radius * 0.08, 0, Math.PI * 2);
-            ctx2.fill();
+
             ctx2.restore();
         });
 
@@ -508,24 +486,22 @@
             if (m.isDead) return;
             ctx2.save();
             ctx2.translate(m.x, m.y);
-            // Dış parlaklık
             ctx2.beginPath();
             ctx2.arc(0, 0, m.radius + 3, 0, Math.PI * 2);
-            ctx2.fillStyle = 'rgba(46, 204, 113, 0.3)';
+            ctx2.fillStyle = 'rgba(230, 126, 34, 0.3)';
             ctx2.fill();
-            // Gövde
             ctx2.beginPath();
             ctx2.arc(0, 0, m.radius, 0, Math.PI * 2);
-            ctx2.fillStyle = '#27ae60';
+            ctx2.fillStyle = '#e67e22';
             ctx2.fill();
-            ctx2.strokeStyle = '#1e8449';
+            ctx2.strokeStyle = '#a04000';
             ctx2.lineWidth = 2;
             ctx2.stroke();
             ctx2.restore();
         });
     });
 
-    window.GAME_EXT.modKartiEkle('turuncu', 'Turuncu Baskın', 'Gri siperler, turuncu bot + mermi slime');
+    window.GAME_EXT.modKartiEkle('turuncu', 'Turuncu Baskın', 'Gri siperler, turuncu bot + turuncu slime');
 
     console.log('[MOD YÜKLENDİ] turuncu');
 })();
