@@ -1,16 +1,7 @@
 // ========== core.js (MERKEZİ KAYIT VE OLAY SİSTEMİ) ==========
 // Modüller ana oyunu ezmeden çalışır.
-// Bu sürüm sadece MEYDAN SAVAŞÇILARI ana oyunu içindir.
-// Korku modu ayrı bir projede geliştirilecek.
-//
-// İçerik:
-//   - registerMode, registerCharacter: Mod ve karakter kaydı
-//   - emit, on: Olay yayınlama/dinleme
-//   - chainHook: Zincirleme hook sistemi
-//   - modKartiEkle: Mod seçim ekranına kart ekleme yardımcısı
-//   - draw/update/chargeUlti sarmalayıcıları: Hook'ları tetikler
-//
-// Ana oyuna dokunulmadan çalışır.
+// Bu sürüm korku modundan arındırılmıştır.
+// Mevcut tüm modlarla uyumludur.
 
 (function () {
     'use strict';
@@ -69,8 +60,6 @@
     };
 
     // ========== ZİNCİRLEME HOOK YARDIMCISI ==========
-    // Birden fazla mod aynı hook'u kullanabilir, birbirini ezmez.
-    // Boolean dönerse OR ile birleştirilir (checkGameOver gibi durumlar için).
     window.GAME_EXT.chainHook = function (hookName, fn) {
         if (!window.GAME_EXT.hooks) window.GAME_EXT.hooks = {};
         const prev = window.GAME_EXT.hooks[hookName];
@@ -85,8 +74,7 @@
         };
     };
 
-    // ========== MOD KARTI EKLEME YARDIMCISI ==========
-    // Her mod tek satırla kendi kartını ekler.
+    // ========== MOD KARTI EKLEME ==========
     window.GAME_EXT.modKartiEkle = function (id, baslik, aciklama) {
         const track = document.getElementById('difficulty-track');
         if (!track) {
@@ -114,11 +102,9 @@
     };
 
     // ========== ÇİZİM SARMALAYICI ==========
-    // window.draw'u sarmalar, hook'ları sırayla tetikler.
-    // onPreDraw -> orijinal draw -> onAimDraw -> onDraw -> onPostDraw
     function wrapDrawFunction() {
         if (typeof window.draw !== 'function') {
-            console.warn('core.js: window.draw bulunamadı, çizim sarmalayıcı kurulmadı.');
+            console.warn('core.js: window.draw bulunamadı.');
             return;
         }
         const originalDraw = window.draw;
@@ -133,10 +119,9 @@
     }
 
     // ========== GÜNCELLEME SARMALAYICI ==========
-    // window.update'i sarmalar, onUpdate hook'unu tetikler.
     function wrapUpdateFunction() {
         if (typeof window.update !== 'function') {
-            console.warn('core.js: window.update bulunamadı, güncelleme sarmalayıcı kurulmadı.');
+            console.warn('core.js: window.update bulunamadı.');
             return;
         }
         const originalUpdate = window.update;
@@ -150,10 +135,9 @@
     }
 
     // ========== ULTİ DOLDURMA SARMALAYICI ==========
-    // window.chargeUlti'yi sarmalar, onChargeUlti hook'unu tetikler.
     function wrapChargeUltiFunction() {
         if (typeof window.chargeUlti !== 'function') {
-            console.warn('core.js: window.chargeUlti bulunamadı, ulti sarmalayıcı kurulmadı.');
+            console.warn('core.js: window.chargeUlti bulunamadı.');
             return;
         }
         const originalChargeUlti = window.chargeUlti;
@@ -178,7 +162,6 @@
         window.GAME_EXT.hooks[h] = window.GAME_EXT.hooks[h] || function () {};
     });
 
-    // ========== Sarmalayıcıları Kur ==========
     wrapDrawFunction();
     wrapUpdateFunction();
     wrapChargeUltiFunction();
