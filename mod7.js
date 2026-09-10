@@ -1,179 +1,284 @@
-// ========== korku-core.js — KORKU MODU MOTORU ==========
-// Ortak mekanikler: kamera, karanlık, gözcü AI, oda sistemi.
-// Bölümler bu motora odaKaydet ile kendi odalarını ekler.
+// ========== mod10.js (TURUNCU BASKIN) ==========
+// - Klasik botlar tamamen kapalı.
+// - Sadece turuncu bot spawn olur.
+// - Turuncu bot ölünce 6 saniye sonra yeniden doğar.
+// - Siperler gri renkte ve 2.5 kat daha fazla cana sahip.
+// - Diğer modlar etkilenmez.
 
 (function () {
     'use strict';
 
-    const WALL_THICKNESS = 30;
-    const CAMERA_ZOOM = 0.85;
-    const CAMERA_LERP = 4;
-    const GORUS_ACIK = 260;
-    const GORUS_KAPALI = 90;
+    const MOD_ID = 'turuncu';
 
-    // ========== DURUM ==========
-    const KORKU = {
-        aktif: false,
-        oda: null,
-        odaId: null,
-        odalar: {},
-        oyuncu: null,
-        gozcu: null,
-        kamera: { x: 0, y: 0 },
-        fener: true,
-        kameraShake: 0
-    };
-    window.KORKU = KORKU;
+    // Turuncu bot sabitleri
+    const BOT_HP = 2500;
+    const BOT_RADIUS = 20;
+    const BOT_SPEED = 1.4;
+    const BOT_HASAR = 500;
+    const BOT_MENZIL = 400;
+    const BOT_ATIS_ARALIK = 1500;
+    const BOT_RESPAWN_SURESI = 360; // 6 saniye (60fps)
+    const BOT_SPAWN_WARN = 120; // 2 saniye uyarı
 
-    // Görüş yarıçapı (sorgu fonksiyonu)
-    KORKU.gorusYaricap = function () {
-        return KORKU.fener ? GORUS_ACIK : GORUS_KAPALI;
-    };
+    // Siper
+    const SIPER_CAN = 2000; // 800 * 2.5
 
-    // Kamera sarsıntısı tetikle
-    KORKU.sarsinti = function (miktar) {
-        KORKU.kameraShake = Math.max(KORKU.kameraShake, miktar);
-    };
+    // Aktif turuncu bot (tek bot)
+    let turuncuBot = null;
+    // Respawn zamanlayıcısı (bot öldükten sonra saymaya başlar)
+    let respawnTimer = 0;
+    // Spawn uyarı zamanlayıcısı (respawn öncesi gösterilir)
+    let spawnUyariTimer = 0;
+    // Botun doğacağı yer (respawn sırasında belli olur)
+    let spawnX = 0;
+    let spawnY = 0;
 
-    // ========== ODA SİSTEMİ ==========
-    KORKU.odaKaydet = function (id, odaObj) {
-        KORKU.odalar[id] = odaObj;
-    };
-
-    KORKU.odaYukle = function (id) {
-        const oda = KORKU.odalar[id];
-        if (!oda) { console.warn('Oda bulunamadı:', id); return; }
-        KORKU.oda = oda;
-        KORKU.odaId = id;
-        if (typeof oda.baslangic === 'function') oda.baslangic();
-        console.log('[KORKU] Oda yüklendi:', id);
-    };
-
-    // ========== FENER AÇ/KAPA ==========
-    window.KORKU_fenerDegistir = function () {
-        KORKU.fener = !KORKU.fener;
-    };
-
-    // ========== MOD KAYDI ==========
-    window.GAME_EXT.registerMode('korku', {
-        label: 'Korku',
-        tamEkranModu: true,
+    window.GAME_EXT.registerMode(MOD_ID, {
+        label: 'Turuncu Baskın',
         onStart: function () {
-            KORKU.aktif = true;
-            KORKU.fener = true;
-            KORKU.kameraShake = 0;
-            // Klasik botları devre dışı bırak
+            turuncuBot = null;
+            respawnTimer = 0;
+            spawnUyariTimer = 0;
+            spawnX = 0;
+            spawnY = 0;
+
+            // Klasik botları kapat
             bot.isActive = false; bot.isDead = true;
             bot2.isActive = false; bot2.isDead = true;
-            slimeBots = []; stationaryBots = []; boomerangBots = [];
-            fogBots = []; nests = []; spawnIndicators = [];
-            // İlk odayı yükle
-            const baslangicOda = KORKU._baslangicOda || 'bolum1_oda1';
-            KORKU.odaYukle(baslangicOda);
+            slimeBots = [];
+            stationaryBots = [];
+            boomerangBots = [];
+            fogBots = [];
+            nests = [];
+            spawnIndicators = [];
+
+            // Siperleri gri yap ve canını 2.5 katına çıkar
+            obstacles.forEach(o => {
+                o.maxHp = SIPER_CAN;
+                o.hp = SIPER_CAN;
+                o._griSiper = true;
+            });
+
+            // İlk turuncu botu hemen doğur
+            dogurTuruncuBot();
         },
+
+        onUpdate: function (ts) {
+            // Diğer spawn timerlarını sıfırla
+            slimeTimer = 0; stationaryTimer = 0;
+            boomerangTimer = 0; fogBotTimer = 0;
+            spawnIndicators = [];
+
+            // Yeni eklenen siperleri de gri yap
+            obstacles.forEach(o => {
+                if (!o._griSiper) {
+                    o.maxHp = SIPER_CAN;
+                    o.hp = SIPER_CAN;
+                    o._griSiper = true;
+                }
+            });
+
+            // Bot ölüyse respawn sayacı çalışsın
+            if (!turuncuBot || turuncuBot.isDead) {
+                if (spawnUyariTimer > 0) {
+                    // Uyarı aşaması: kırmızı çember gösteriliyor
+                    spawnUyariTimer -= ts;
+                    if (spawnUyariTimer <= 0) {
+                        dogurTuruncuBot();
+                    }
+                } else if (respawnTimer > 0) {
+                    // Bekleme aşaması: 6 saniye
+                    respawnTimer -= ts;
+                    if (respawnTimer <= 0) {
+                        // Uyarı aşamasına geç
+                        respawnTimer = 0;
+                        const x = Math.random() * (canvas.width - 200) + 100;
+                        const y = Math.random() * (canvas.height - 200) + 100;
+                        spawnX = x;
+                        spawnY = y;
+                        spawnUyariTimer = BOT_SPAWN_WARN;
+                    }
+                }
+            }
+
+            // Turuncu botu güncelle
+            if (turuncuBot && !turuncuBot.isDead) {
+                const b = turuncuBot;
+
+                // Can kontrolü (Ders 6)
+                if (b.hp <= 0 && !b.isDead) {
+                    b.isDead = true;
+                    spawnParticles(b.x, b.y, b.color);
+                    triggerBotKill(b.x, b);
+                    // Respawn sayacını başlat
+                    respawnTimer = BOT_RESPAWN_SURESI;
+                } else {
+                    // Görünmezlik kontrolü (Ders 5)
+                    const canSee = !player.isDead && !player.isInvisible;
+
+                    if (canSee) {
+                        b.angle = Math.atan2(player.y - b.y, player.x - b.x);
+                        const d = getDist(b, player);
+
+                        if (d > BOT_MENZIL * 0.8) {
+                            b.x += Math.cos(b.angle) * b.speed * ts;
+                            b.y += Math.sin(b.angle) * b.speed * ts;
+                        } else if (d < 150) {
+                            b.x -= Math.cos(b.angle) * b.speed * ts;
+                            b.y -= Math.sin(b.angle) * b.speed * ts;
+                        }
+
+                        if (d < BOT_MENZIL && Date.now() - b.lastShot > BOT_ATIS_ARALIK) {
+                            b.lastShot = Date.now();
+                            botBullets.push({
+                                x: b.x, y: b.y,
+                                sx: b.x, sy: b.y,
+                                vx: Math.cos(b.angle) * BOT_BULLET_SPEED,
+                                vy: Math.sin(b.angle) * BOT_BULLET_SPEED,
+                                dmgMod: 1,
+                                owner: b
+                            });
+                        }
+                    }
+
+                    // Knockback
+                    if (Math.abs(b.kbX) > 0.1 || Math.abs(b.kbY) > 0.1) {
+                        b.x += b.kbX * ts;
+                        b.y += b.kbY * ts;
+                        b.kbX *= 0.85;
+                        b.kbY *= 0.85;
+                    }
+
+                    // Sınırlar
+                    b.x = clampPos(b.x, b.radius + WALL_THICKNESS, canvas.width - b.radius - WALL_THICKNESS);
+                    b.y = clampPos(b.y, b.radius + WALL_THICKNESS, canvas.height - b.radius - WALL_THICKNESS);
+                    resolveObstacleCollision(b);
+                }
+            }
+        },
+
         onReset: function () {
-            KORKU.aktif = false;
-            KORKU.oda = null;
-            KORKU.odaId = null;
-            KORKU.kameraShake = 0;
-            if (window.KORKU_EGITIM) window.KORKU_EGITIM.bitir();
+            turuncuBot = null;
+            respawnTimer = 0;
+            spawnUyariTimer = 0;
+            spawnX = 0;
+            spawnY = 0;
         }
     });
 
-    // Mod kartı (tek satır)
-    window.GAME_EXT.modKartiEkle('korku', 'Korku', 'Buzluk — Bölüm 1: Uyanış');
+    // Yeni turuncu bot doğur
+    function dogurTuruncuBot() {
+        turuncuBot = {
+            x: spawnX || (Math.random() * (canvas.width - 200) + 100),
+            y: spawnY || (Math.random() * (canvas.height - 200) + 100),
+            radius: BOT_RADIUS,
+            hp: BOT_HP, maxHp: BOT_HP,
+            speed: BOT_SPEED,
+            angle: 0,
+            lastShot: 0,
+            isDead: false,
+            isActive: true,
+            color: '#e67e22',
+            kbX: 0, kbY: 0
+        };
+        spawnParticles(turuncuBot.x, turuncuBot.y, '#e67e22', 'smoke');
+        spawnX = 0;
+        spawnY = 0;
+    }
 
-    // ========== GÜNCELLEME ==========
-    window.GAME_EXT.chainHook('onFullUpdate', function (ts) {
-        if (!KORKU.aktif || !KORKU.oda) return;
-        const dt = Math.min(ts * 0.0166, 0.1);
-
-        // Odanın güncelleme fonksiyonu
-        if (typeof KORKU.oda.guncelle === 'function') KORKU.oda.guncelle(dt);
-
-        // Kamera takibi
-        if (KORKU.oyuncu) {
-            const lerpF = 1 - Math.exp(-dt * CAMERA_LERP);
-            KORKU.kamera.x += (KORKU.oyuncu.x - KORKU.kamera.x) * lerpF;
-            KORKU.kamera.y += (KORKU.oyuncu.y - KORKU.kamera.y) * lerpF;
-        }
-
-        // Kamera sarsıntısı sönümü
-        if (KORKU.kameraShake > 0) KORKU.kameraShake = Math.max(0, KORKU.kameraShake - dt * 30);
+    // ========== DÜŞMAN LİSTESİNE EKLE ==========
+    window.GAME_EXT.chainHook('getExtraEnemies', function () {
+        if (window.GAME_MODE !== MOD_ID) return [];
+        if (!turuncuBot || turuncuBot.isDead) return [];
+        return [turuncuBot];
     });
 
     // ========== ÇİZİM ==========
-    window.GAME_EXT.chainHook('onFullRender', function (ctx2) {
-        if (!KORKU.aktif || !KORKU.oda) return;
+    window.GAME_EXT.chainHook('onDraw', function (ctx2) {
+        if (window.GAME_MODE !== MOD_ID || !gameStarted) return;
 
-        ctx2.fillStyle = '#05070a';
-        ctx2.fillRect(0, 0, canvas.width, canvas.height);
+        // Siperleri gri çiz
+        for (const o of obstacles) {
+            ctx2.save();
+            ctx2.translate(o.x, o.y);
+            ctx2.fillStyle = '#808080';
+            ctx2.beginPath();
+            ctx2.roundRect(-o.radius, -o.radius, o.radius * 2, o.radius * 2, 10);
+            ctx2.fill();
+            ctx2.strokeStyle = '#505050';
+            ctx2.lineWidth = 2;
+            ctx2.stroke();
+            ctx2.fillStyle = '#e74c3c';
+            ctx2.fillRect(-15, -o.radius - 15, 30, 4);
+            ctx2.fillStyle = '#2ecc71';
+            ctx2.fillRect(-15, -o.radius - 15, 30 * (o.hp / o.maxHp), 4);
+            ctx2.restore();
+        }
 
-        ctx2.save();
-        const shakeX = KORKU.kameraShake > 0 ? (Math.random() - 0.5) * KORKU.kameraShake : 0;
-        const shakeY = KORKU.kameraShake > 0 ? (Math.random() - 0.5) * KORKU.kameraShake : 0;
-        const cx = canvas.width / 2 - KORKU.kamera.x * CAMERA_ZOOM + shakeX;
-        const cy = canvas.height / 2 - KORKU.kamera.y * CAMERA_ZOOM + shakeY;
-        ctx2.translate(cx, cy);
-        ctx2.scale(CAMERA_ZOOM, CAMERA_ZOOM);
+        // Spawn uyarısı (bot gelecek yerdeki çember)
+        if (spawnUyariTimer > 0) {
+            ctx2.save();
+            ctx2.translate(spawnX, spawnY);
+            ctx2.globalAlpha = Math.abs(Math.sin(Date.now() / 150));
+            ctx2.beginPath();
+            ctx2.arc(0, 0, BOT_RADIUS + 15, 0, Math.PI * 2);
+            ctx2.strokeStyle = '#e67e22';
+            ctx2.lineWidth = 4;
+            ctx2.stroke();
+            ctx2.globalAlpha = 1;
+            ctx2.fillStyle = '#e67e22';
+            ctx2.font = "bold 16px Arial";
+            ctx2.textAlign = "center";
+            ctx2.fillText(Math.ceil(spawnUyariTimer / 60), 0, 6);
+            ctx2.restore();
+        }
 
-        // Odanın çizim fonksiyonu
-        if (typeof KORKU.oda.ciz === 'function') KORKU.oda.ciz(ctx2);
+        // Respawn geri sayım göstergesi (bot ölüyken)
+        if ((!turuncuBot || turuncuBot.isDead) && respawnTimer > 0) {
+            ctx2.save();
+            ctx2.translate(canvas.width / 2, 80);
+            ctx2.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx2.fillRect(-100, -20, 200, 40);
+            ctx2.fillStyle = '#e67e22';
+            ctx2.font = "bold 16px Arial";
+            ctx2.textAlign = "center";
+            ctx2.fillText("YENİ BOT: " + Math.ceil(respawnTimer / 60) + "s", 0, 6);
+            ctx2.restore();
+        }
 
-        ctx2.restore();
-
-        // Karanlık katmanı (ekran koordinatında)
-        cizKaranlik(ctx2);
+        // Turuncu botu çiz
+        if (turuncuBot && !turuncuBot.isDead) {
+            const b = turuncuBot;
+            ctx2.save();
+            ctx2.translate(b.x, b.y);
+            ctx2.fillStyle = '#e74c3c';
+            ctx2.fillRect(-20, -b.radius - 15, 40, 5);
+            ctx2.fillStyle = '#2ecc71';
+            ctx2.fillRect(-20, -b.radius - 15, 40 * (b.hp / b.maxHp), 5);
+            ctx2.rotate(b.angle);
+            ctx2.fillStyle = b.color;
+            ctx2.beginPath();
+            ctx2.arc(0, 0, b.radius, 0, Math.PI * 2);
+            ctx2.fill();
+            ctx2.strokeStyle = '#a04000';
+            ctx2.lineWidth = 3;
+            ctx2.stroke();
+            ctx2.fillStyle = '#fff';
+            ctx2.beginPath();
+            ctx2.arc(8, -5, 4, 0, Math.PI * 2);
+            ctx2.arc(8, 5, 4, 0, Math.PI * 2);
+            ctx2.fill();
+            ctx2.fillStyle = '#1a1a2e';
+            ctx2.beginPath();
+            ctx2.arc(9, -5, 2, 0, Math.PI * 2);
+            ctx2.arc(9, 5, 2, 0, Math.PI * 2);
+            ctx2.fill();
+            ctx2.restore();
+        }
     });
 
-    // ========== KARANLIK KATMANI ==========
-    const darkCanvas = document.createElement('canvas');
-    const darkCtx = darkCanvas.getContext('2d');
-    function boyutGuncelle() {
-        darkCanvas.width = canvas.width;
-        darkCanvas.height = canvas.height;
-    }
-    window.addEventListener('resize', boyutGuncelle);
-    boyutGuncelle();
+    // Mod kartı
+    window.GAME_EXT.modKartiEkle('turuncu', 'Turuncu Baskın', 'Gri siperler, tek turuncu bot');
 
-    function cizKaranlik(ctx2) {
-        if (!KORKU.oyuncu) return;
-        if (darkCanvas.width !== canvas.width) boyutGuncelle();
-        darkCtx.clearRect(0, 0, darkCanvas.width, darkCanvas.height);
-        darkCtx.fillStyle = 'rgba(2,3,6,0.97)';
-        darkCtx.fillRect(0, 0, darkCanvas.width, darkCanvas.height);
-        const sx = canvas.width / 2 + (KORKU.oyuncu.x - KORKU.kamera.x) * CAMERA_ZOOM;
-        const sy = canvas.height / 2 + (KORKU.oyuncu.y - KORKU.kamera.y) * CAMERA_ZOOM;
-        const r = KORKU.gorusYaricap() * CAMERA_ZOOM;
-        const g = darkCtx.createRadialGradient(sx, sy, r * 0.15, sx, sy, r);
-        g.addColorStop(0, 'rgba(0,0,0,1)');
-        g.addColorStop(0.7, 'rgba(0,0,0,0.85)');
-        g.addColorStop(1, 'rgba(0,0,0,0)');
-        darkCtx.globalCompositeOperation = 'destination-out';
-        darkCtx.fillStyle = g;
-        darkCtx.beginPath();
-        darkCtx.arc(sx, sy, r, 0, Math.PI * 2);
-        darkCtx.fill();
-        darkCtx.globalCompositeOperation = 'source-over';
-        ctx2.drawImage(darkCanvas, 0, 0);
-    }
-
-    // ========== YARDIMCILAR ==========
-    KORKU.mesafe = function (a, b) { return Math.hypot(a.x - b.x, a.y - b.y); };
-    KORKU.WALL_THICKNESS = WALL_THICKNESS;
-    KORKU.CAMERA_ZOOM = CAMERA_ZOOM;
-
-    // ========== FENER BUTONU ==========
-    window.addEventListener('load', function () {
-        const btn = document.getElementById('korkuFenerBtn');
-        if (btn) btn.addEventListener('pointerdown', function (e) {
-            e.preventDefault();
-            KORKU.fener = !KORKU.fener;
-            btn.textContent = KORKU.fener ? '💡' : '🔦';
-            btn.style.borderColor = KORKU.fener ? '#f1c40f' : '#4a4a5a';
-            btn.style.color = KORKU.fener ? '#f1c40f' : '#4a4a5a';
-        });
-    });
-
-    console.log('[KORKU] Motor hazır.');
+    console.log('[MOD YÜKLENDİ] turuncu');
 })();
