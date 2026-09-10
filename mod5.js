@@ -3,10 +3,13 @@
 // - Aura: 94 birim yarıçap, hasar vermez, içindeki her düşman başına
 //   saniyede 200 can kazandırır. Çok hafif görünür, göz yormaz.
 // - Aura her can aldığında hafifçe parlar (animasyonlu).
-// - Ulti: anında 200 can verir, 0.5 saniye hasar almaz,
+// - Ulti: anında 200 can verir, 1.5 saniye hasar almaz,
 //   sonra aura patlar, 1000 hasar verir (savurma YOK).
+// - Ulti sırasında karakterin etrafında koruma kalkanı belirir.
 // - Ulti patlaması vurduğu her düşman başına %15 ulti doldurur.
-// - Tema: sıcaklık / kül. Renk: koyu gri-turuncu.
+// - Aksesuar 1: Aura Sömürüsü (3 sn, aura büyür + can kazanımı 2x)
+// - Aksesuar 2: Kül Fırtınası (5 sn, aura hasar verir + can kazanımı azalır)
+// - İki aksesuar aynı anda kullanılamaz.
 
 (function () {
     'use strict';
@@ -31,10 +34,20 @@
 
     // Ulti
     const ULTI_ANINDA_CAN = 200;
-    const ULTI_GECIKME = 60; // 1 saniye
+    const ULTI_GECIKME = 90; // 1.5 saniye
     const ULTI_PATLAMA_HASAR = 1000;
-    const ULTI_PATLAMA_YARICAP = 70; // küçültüldü
-    const ULTI_DOKUNULMAZLIK = 30; // 0.5 saniye
+    const ULTI_PATLAMA_YARICAP = 70;
+    const ULTI_DOKUNULMAZLIK = 90; // 1.5 saniye (gecikmeyle aynı)
+
+    // Aksesuar 1: Aura Sömürüsü
+    const SOMURU_SURESI = 180;
+    const SOMURU_CAN_KATSAYISI = 2;
+    const SOMURU_HIZ_AZALTMA = 0.7;
+
+    // Aksesuar 2: Kül Fırtınası
+    const FIRTINA_SURESI = 300;
+    const FIRTINA_HASAR = 200;
+    const FIRTINA_CAN_KAZANIM = 100;
 
     window.GAME_EXT.characters[CHAR_ID] = {
         color: CHAR_COLOR,
@@ -88,10 +101,24 @@
             this.kulUltiAktif = false;
             this.kulAuraPulse = 0;
             this.kulHasarAlmazlik = 0;
+            this.kulAuraSiphon = false;
+            this.kulAuraFirtina = false;
+            this.kulAuraSiphonSure = 0;
+            this.kulAuraFirtinaSure = 0;
+            this.originalSpeed = CHAR_SPEED;
+            this.speed = CHAR_SPEED;
             kulMermileri = [];
-            if (gadgetBtn) gadgetBtn.style.display = 'none';
-            if (gadgetBtn2) gadgetBtn2.style.display = 'none';
+
+            if (gadgetBtn) {
+                gadgetBtn.style.display = 'flex';
+                gadgetBtn.innerHTML = 'AURA<br>SÖMÜR<br><span id="gadget-timer"></span>';
+            }
+            if (gadgetBtn2) {
+                gadgetBtn2.style.display = 'flex';
+                gadgetBtn2.innerHTML = 'KÜL<br>FIRTINASI<br><span id="gadget-timer-2"></span>';
+            }
             if (ultiBtn) ultiBtn.style.display = 'flex';
+
             this.ultCharge = 0;
             this.ultReady = false;
             if (ultFill) ultFill.style.width = "0%";
@@ -151,7 +178,7 @@
         addFloatingNumber(this.x, this.y - 30, "+" + ULTI_ANINDA_CAN, "#2ecc71");
         this.kulAuraPulse = 1.0;
 
-        // 0.5 saniye hasar almazlık
+        // 1.5 saniye hasar almazlık
         this.kulHasarAlmazlik = ULTI_DOKUNULMAZLIK;
         this.jumpInvulnerable = true;
 
@@ -162,6 +189,46 @@
         this.ultCharge = 0;
         if (ultFill) ultFill.style.width = "0%";
         if (ultiBtn) ultiBtn.classList.remove('ready');
+    };
+
+    // ========== AKSESUAR 1: AURA SÖMÜRÜSÜ ==========
+    const originalActivateGadget = Player.prototype.activateGadget;
+    Player.prototype.activateGadget = function (a, pull) {
+        if (this.charType !== CHAR_ID) return originalActivateGadget.call(this, a, pull);
+        if (!this.gadgetReady || this.isDead) return;
+        if (this.kulAuraFirtina) {
+            addFloatingNumber(this.x, this.y - 30, "KÜL FIRTINASI AKTİF!", "#e74c3c");
+            return;
+        }
+
+        this.kulAuraSiphon = true;
+        this.kulAuraSiphonSure = SOMURU_SURESI;
+        addFloatingNumber(this.x, this.y - 30, "AURA SÖMÜRÜSÜ!", CHAR_ACCENT);
+
+        this.gadgetReady = false;
+        this.gadgetCooldown = SOMURU_SURESI + 120;
+        if (gadgetBtn) gadgetBtn.classList.add('cooldown');
+        if (gadgetTimerText) gadgetTimerText.innerText = Math.ceil(this.gadgetCooldown / 60) + "s";
+    };
+
+    // ========== AKSESUAR 2: KÜL FIRTINASI ==========
+    const originalActivateGadget2 = Player.prototype.activateGadget2;
+    Player.prototype.activateGadget2 = function (a, pull) {
+        if (this.charType !== CHAR_ID) return originalActivateGadget2.call(this, a, pull);
+        if (!this.gadget2Ready || this.isDead) return;
+        if (this.kulAuraSiphon) {
+            addFloatingNumber(this.x, this.y - 30, "AURA SÖMÜRÜSÜ AKTİF!", "#e74c3c");
+            return;
+        }
+
+        this.kulAuraFirtina = true;
+        this.kulAuraFirtinaSure = FIRTINA_SURESI;
+        addFloatingNumber(this.x, this.y - 30, "KÜL FIRTINASI!", CHAR_ACCENT);
+
+        this.gadget2Ready = false;
+        this.gadget2Cooldown = FIRTINA_SURESI + 120;
+        if (gadgetBtn2) gadgetBtn2.classList.add('cooldown');
+        if (gadgetTimerText2) gadgetTimerText2.innerText = Math.ceil(this.gadget2Cooldown / 60) + "s";
     };
 
     // ========== ULTİ DOLDURMA ==========
@@ -180,16 +247,55 @@
     chainHook('onUpdate', function (ts) {
         if (!gameStarted || player.charType !== CHAR_ID) return;
 
-        if (ultiBtn && ultiBtn.style.display !== 'flex') {
-            ultiBtn.style.display = 'flex';
+        // Buton görünürlüğü — her kare garantile
+        if (ultiBtn && ultiBtn.style.display !== 'flex') ultiBtn.style.display = 'flex';
+        if (gadgetBtn && gadgetBtn.style.display !== 'flex') gadgetBtn.style.display = 'flex';
+        if (gadgetBtn2 && gadgetBtn2.style.display !== 'flex') gadgetBtn2.style.display = 'flex';
+
+        // Aksesuar süreleri
+        if (player.kulAuraSiphon) {
+            player.kulAuraSiphonSure -= ts;
+            if (player.kulAuraSiphonSure <= 0) {
+                player.kulAuraSiphon = false;
+                player.kulAuraSiphonSure = 0;
+            }
+        }
+        if (player.kulAuraFirtina) {
+            player.kulAuraFirtinaSure -= ts;
+            if (player.kulAuraFirtinaSure <= 0) {
+                player.kulAuraFirtina = false;
+                player.kulAuraFirtinaSure = 0;
+            }
         }
 
+        // Aura can kazanımı / hasar
         let toplamCan = 0;
-        getActiveEnemies().forEach(e => {
-            if (getDist(player, e) <= AURA_YARICAP + e.radius) {
-                toplamCan += (AURA_CAN_KAZANIM / 60) * ts;
-            }
-        });
+        const auraYaricap = player.kulAuraSiphon ? AURA_YARICAP * 2 : AURA_YARICAP;
+
+        if (player.kulAuraFirtina) {
+            // Fırtına modu: hasar ver + az can kazan
+            getActiveEnemies().forEach(e => {
+                if (getDist(player, e) <= auraYaricap + e.radius) {
+                    e.hp -= (FIRTINA_HASAR / 60) * ts;
+                    toplamCan += (FIRTINA_CAN_KAZANIM / 60) * ts;
+                    if (!e._kulFirtinaYazisi || Date.now() - e._kulFirtinaYazisi > 1000) {
+                        addFloatingNumber(e.x, e.y, Math.floor(FIRTINA_HASAR), CHAR_ACCENT);
+                        e._kulFirtinaYazisi = Date.now();
+                    }
+                }
+            });
+        } else {
+            // Normal veya sömürü modu: sadece can kazan
+            const canKazanimi = player.kulAuraSiphon
+                ? AURA_CAN_KAZANIM * SOMURU_CAN_KATSAYISI
+                : AURA_CAN_KAZANIM;
+            getActiveEnemies().forEach(e => {
+                if (getDist(player, e) <= auraYaricap + e.radius) {
+                    toplamCan += (canKazanimi / 60) * ts;
+                }
+            });
+        }
+
         if (toplamCan > 0) {
             player.hp = Math.min(player.maxHp, player.hp + toplamCan);
             player.kulAuraPulse = Math.min(1.0, (player.kulAuraPulse || 0) + 0.08);
@@ -203,6 +309,14 @@
             }
         }
 
+        // Sömürü hız azaltma
+        if (player.kulAuraSiphon) {
+            player.speed = player.originalSpeed * SOMURU_HIZ_AZALTMA;
+        } else {
+            player.speed = player.originalSpeed;
+        }
+
+        // Hasar almazlık
         if (player.kulHasarAlmazlik > 0) {
             player.kulHasarAlmazlik -= ts;
             if (player.kulHasarAlmazlik <= 0) {
@@ -211,6 +325,7 @@
             }
         }
 
+        // Ulti gecikmesi
         if (player.kulUltiAktif) {
             player.kulUltiZamanlayici -= ts;
             if (player.kulUltiZamanlayici <= 0) {
@@ -219,6 +334,7 @@
             }
         }
 
+        // Mermi güncelleme
         for (let i = kulMermileri.length - 1; i >= 0; i--) {
             const m = kulMermileri[i];
             if (m.isDead) { kulMermileri.splice(i, 1); continue; }
@@ -256,6 +372,10 @@
             player.kulAuraPulse = 0;
             player.kulHasarAlmazlik = 0;
             player.jumpInvulnerable = false;
+            player.kulAuraSiphon = false;
+            player.kulAuraFirtina = false;
+            player.kulAuraSiphonSure = 0;
+            player.kulAuraFirtinaSure = 0;
         }
     });
 
@@ -263,22 +383,53 @@
     chainHook('onDraw', function (ctx2) {
         if (!gameStarted || player.charType !== CHAR_ID) return;
 
+        const auraYaricap = player.kulAuraSiphon ? AURA_YARICAP * 2 : AURA_YARICAP;
         const pulse = player.kulAuraPulse || 0;
-        const auraAlpha = 0.08 + pulse * 0.08;
+        const auraAlpha = player.kulAuraFirtina
+            ? 0.15 + pulse * 0.1
+            : 0.08 + pulse * 0.08;
         const grad = ctx2.createRadialGradient(
-            player.x, player.y, AURA_YARICAP * 0.1,
-            player.x, player.y, AURA_YARICAP
+            player.x, player.y, auraYaricap * 0.1,
+            player.x, player.y, auraYaricap
         );
         grad.addColorStop(0, `rgba(211, 84, 0, ${auraAlpha})`);
         grad.addColorStop(0.6, `rgba(211, 84, 0, ${auraAlpha * 0.5})`);
         grad.addColorStop(1, 'rgba(211, 84, 0, 0)');
         ctx2.save();
         ctx2.beginPath();
-        ctx2.arc(player.x, player.y, AURA_YARICAP, 0, Math.PI * 2);
+        ctx2.arc(player.x, player.y, auraYaricap, 0, Math.PI * 2);
         ctx2.fillStyle = grad;
         ctx2.fill();
         ctx2.restore();
 
+        // Ulti koruma kalkanı (1.5 saniye boyunca)
+        if (player.kulUltiAktif) {
+            const kalan = player.kulUltiZamanlayici / 60;
+            const kalkanR = 28 + Math.sin(Date.now() / 80) * 3;
+            ctx2.save();
+            ctx2.translate(player.x, player.y);
+            // Dönen altın kalkan
+            ctx2.beginPath();
+            ctx2.arc(0, 0, kalkanR, 0, Math.PI * 2);
+            ctx2.strokeStyle = `rgba(241, 196, 15, ${0.6 + 0.4 * Math.sin(Date.now() / 120)})`;
+            ctx2.lineWidth = 3;
+            ctx2.setLineDash([8, 4]);
+            ctx2.stroke();
+            ctx2.setLineDash([]);
+            // İç ışıma
+            ctx2.beginPath();
+            ctx2.arc(0, 0, kalkanR * 0.7, 0, Math.PI * 2);
+            ctx2.fillStyle = `rgba(241, 196, 15, ${0.2 + 0.1 * Math.sin(Date.now() / 100)})`;
+            ctx2.fill();
+            // Geri sayım
+            ctx2.fillStyle = '#f1c40f';
+            ctx2.font = "bold 13px Arial";
+            ctx2.textAlign = "center";
+            ctx2.fillText(kalan.toFixed(1), 0, -kalkanR - 8);
+            ctx2.restore();
+        }
+
+        // Mermiler
         kulMermileri.forEach(m => {
             ctx2.save();
             ctx2.translate(m.x, m.y);
@@ -329,13 +480,14 @@
     // ========== PATLAMA ==========
     function patlatAura() {
         const p = player;
-        explosions.push({x: p.x, y: p.y, radius: 10, maxRadius: ULTI_PATLAMA_YARICAP, life: 15, maxLife: 15});
-        for (let k = 0; k < 12; k++) {
+
+        explosions.push({x: p.x, y: p.y, radius: 10, maxRadius: ULTI_PATLAMA_YARICAP, life: 12, maxLife: 12});
+        for (let k = 0; k < 6; k++) {
             const ang = Math.random() * Math.PI * 2;
-            const dist = Math.random() * ULTI_PATLAMA_YARICAP;
+            const dist = Math.random() * ULTI_PATLAMA_YARICAP * 0.7;
             spawnParticles(p.x + Math.cos(ang) * dist, p.y + Math.sin(ang) * dist, CHAR_ACCENT, 'normal');
         }
-        screenShake = 10;
+        screenShake = 5;
         addFloatingNumber(p.x, p.y - 30, "KÜL PATLAMASI!", CHAR_ACCENT);
 
         let vurulanSayi = 0;
@@ -345,11 +497,9 @@
                 e.hp -= ULTI_PATLAMA_HASAR;
                 addFloatingNumber(e.x, e.y, ULTI_PATLAMA_HASAR, "#e74c3c");
                 vurulanSayi++;
-                // Savurma YOK
             }
         });
 
-        // Vurduğu her düşman başına %15 ulti doldur
         if (vurulanSayi > 0) {
             const dolum = vurulanSayi * 15;
             player.ultCharge = Math.min(100, player.ultCharge + dolum);
