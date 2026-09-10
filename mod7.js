@@ -1,210 +1,179 @@
-// ========== egitim.js — KORKU MODU EĞİTİM KATMANI ==========
-// Korku modu aktifken çalışır, adım adım öğretir.
-// Ana oyuna dokunmaz, kendi panelini oluşturur, sadece mod tarafından çağrılır.
-// Bağımsız bir "overlay" katmanıdır; oyun mantığına karışmaz.
+// ========== korku-core.js — KORKU MODU MOTORU ==========
+// Ortak mekanikler: kamera, karanlık, gözcü AI, oda sistemi.
+// Bölümler bu motora odaKaydet ile kendi odalarını ekler.
 
 (function () {
     'use strict';
 
-    const EGITIM = {
+    const WALL_THICKNESS = 30;
+    const CAMERA_ZOOM = 0.85;
+    const CAMERA_LERP = 4;
+    const GORUS_ACIK = 260;
+    const GORUS_KAPALI = 90;
+
+    // ========== DURUM ==========
+    const KORKU = {
         aktif: false,
-        adim: 1,
-        toplamAdim: 4,
-        tamamlandi: false,
-        // İlerleme bayrakları (korku modu bunları günceller)
-        hareketTimer: 0,
-        hareketHedef: 1.5,
-        hareketTamam: false,
-        atesTamam: false,
-        anahtarTamam: false,
-        kapiTamam: false
+        oda: null,
+        odaId: null,
+        odalar: {},
+        oyuncu: null,
+        gozcu: null,
+        kamera: { x: 0, y: 0 },
+        fener: true,
+        kameraShake: 0
+    };
+    window.KORKU = KORKU;
+
+    // Görüş yarıçapı (sorgu fonksiyonu)
+    KORKU.gorusYaricap = function () {
+        return KORKU.fener ? GORUS_ACIK : GORUS_KAPALI;
     };
 
-    const adimlar = {
-        1: { baslik: 'ADIM 1', metin: 'Hareket etmek için SOL joystick\'i kullan' },
-        2: { baslik: 'ADIM 2', metin: 'Sağ joystick ile nişan al ve SİS BOTUNU yok et' },
-        3: { baslik: 'ADIM 3', metin: 'Yukarıdaki ANAHTARI al' },
-        4: { baslik: 'ADIM 4', metin: 'KAPIYI aç ve koridora geç' }
+    // Kamera sarsıntısı tetikle
+    KORKU.sarsinti = function (miktar) {
+        KORKU.kameraShake = Math.max(KORKU.kameraShake, miktar);
     };
 
-    let panelEl = null;
-    let gorevEl = null;
-    let glowSolEl = null;
-    let glowSagEl = null;
-
-    function olustur() {
-        // Talimat paneli
-        panelEl = document.createElement('div');
-        panelEl.id = 'egitim-panel';
-        panelEl.style.cssText = `
-            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-            background: rgba(10,15,25,0.92); border: 2px solid #3e5078;
-            border-radius: 8px; padding: 12px 20px; color: #e8f4ff;
-            font-size: clamp(0.9rem, 3vw, 1.1rem); text-align: center;
-            max-width: 90%; z-index: 30; pointer-events: none;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.5); display: none;
-            font-family: 'Segoe UI', Arial, sans-serif;
-        `;
-        document.body.appendChild(panelEl);
-
-        // Görev listesi
-        gorevEl = document.createElement('div');
-        gorevEl.id = 'egitim-gorevler';
-        gorevEl.style.cssText = `
-            position: absolute; top: 20px; left: 20px;
-            background: rgba(10,15,25,0.85); border: 1px solid #2e3d5e;
-            border-radius: 6px; padding: 10px 14px; z-index: 30;
-            font-size: clamp(0.75rem, 2.5vw, 0.9rem);
-            pointer-events: none; color: #6f7d92;
-            font-family: 'Segoe UI', Arial, sans-serif;
-            display: none; line-height: 1.5;
-        `;
-        document.body.appendChild(gorevEl);
-
-        // Joystick vurgu çemberleri
-        glowSolEl = document.createElement('div');
-        glowSolEl.style.cssText = `
-            position: absolute; bottom: 60px; left: 30px;
-            width: 140px; height: 140px; border-radius: 50%;
-            pointer-events: none; border: 3px dashed #f1c40f;
-            box-shadow: 0 0 0 0 rgba(241,196,15,0.6);
-            animation: egitimPulse 1.2s ease-in-out infinite;
-            z-index: 25; opacity: 0; transition: opacity 0.3s;
-        `;
-        document.body.appendChild(glowSolEl);
-
-        glowSagEl = document.createElement('div');
-        glowSagEl.style.cssText = glowSolEl.style.cssText.replace('left: 30px', 'right: 30px');
-        glowSagEl.style.left = 'auto';
-        glowSagEl.style.right = '30px';
-        document.body.appendChild(glowSagEl);
-
-        // Animasyon stilini ekle (tek seferlik)
-        if (!document.getElementById('egitim-style')) {
-            const style = document.createElement('style');
-            style.id = 'egitim-style';
-            style.textContent = `
-                @keyframes egitimPulse {
-                    0%, 100% { box-shadow: 0 0 0 0 rgba(241,196,15,0.6); }
-                    50% { box-shadow: 0 0 0 15px rgba(241,196,15,0); }
-                }
-            `;
-            document.head.appendChild(style);
-        }
-    }
-
-    function guncellePanel() {
-        if (!panelEl) return;
-        const a = adimlar[EGITIM.adim];
-        if (!a) return;
-        panelEl.innerHTML = `<span style="color:#f1c40f;font-weight:700;font-size:0.85em;letter-spacing:0.1em;display:block;margin-bottom:4px;">${a.baslik}</span><span>${a.metin}</span>`;
-    }
-
-    function guncelleGorevler() {
-        if (!gorevEl) return;
-        const satirlar = [];
-        for (let i = 1; i <= EGITIM.toplamAdim; i++) {
-            const metinler = ['Hareket etmeyi öğren', 'Sis botunu yok et', 'Anahtarı al', 'Kapıyı aç'];
-            let sinif = '';
-            if (i < EGITIM.adim || EGITIM.tamamlandi) sinif = 'color:#2ecc71;text-decoration:line-through;';
-            else if (i === EGITIM.adim) sinif = 'color:#f1c40f;font-weight:700;';
-            satirlar.push(`<div style="${sinif}">${i}. ${metinler[i-1]}</div>`);
-        }
-        gorevEl.innerHTML = satirlar.join('');
-    }
-
-    function guncelleGlow() {
-        if (!glowSolEl || !glowSagEl) return;
-        glowSolEl.style.opacity = (EGITIM.adim === 1 && EGITIM.aktif) ? '1' : '0';
-        glowSagEl.style.opacity = (EGITIM.adim === 2 && EGITIM.aktif) ? '1' : '0';
-    }
-
-    function adimIlerlet() {
-        if (EGITIM.adim >= EGITIM.toplamAdim) {
-            EGITIM.tamamlandi = true;
-            panelEl.innerHTML = `<span style="color:#2ecc71;font-weight:700;font-size:0.85em;letter-spacing:0.1em;display:block;margin-bottom:4px;">TEBRİKLER</span><span>Öğretici tamamlandı! Koridora ilerleyebilirsin.</span>`;
-            guncelleGorevler();
-            guncelleGlow();
-            setTimeout(() => {
-                if (panelEl) panelEl.style.display = 'none';
-                if (gorevEl) gorevEl.style.display = 'none';
-            }, 3000);
-            return;
-        }
-        EGITIM.adim++;
-        guncellePanel();
-        guncelleGorevler();
-        guncelleGlow();
-    }
-
-    // ========== DIŞA AÇIK API (korku modu kullanır) ==========
-    window.KORKU_EGITIM = {
-        baslat() {
-            if (!panelEl) olustur();
-            EGITIM.aktif = true;
-            EGITIM.adim = 1;
-            EGITIM.tamamlandi = false;
-            EGITIM.hareketTimer = 0;
-            EGITIM.hareketTamam = false;
-            EGITIM.atesTamam = false;
-            EGITIM.anahtarTamam = false;
-            EGITIM.kapiTamam = false;
-            panelEl.style.display = 'block';
-            gorevEl.style.display = 'block';
-            guncellePanel();
-            guncelleGorevler();
-            guncelleGlow();
-        },
-
-        bitir() {
-            EGITIM.aktif = false;
-            if (panelEl) panelEl.style.display = 'none';
-            if (gorevEl) gorevEl.style.display = 'none';
-            if (glowSolEl) glowSolEl.style.opacity = '0';
-            if (glowSagEl) glowSagEl.style.opacity = '0';
-        },
-
-        // Her karede çağrılır — hareket süresi takibi
-        hareketBildir(dt, hareketEdiyorMu) {
-            if (!EGITIM.aktif || EGITIM.adim !== 1) return;
-            if (hareketEdiyorMu) {
-                EGITIM.hareketTimer += dt;
-                if (EGITIM.hareketTimer >= EGITIM.hareketHedef) {
-                    EGITIM.hareketTamam = true;
-                    adimIlerlet();
-                }
-            }
-        },
-
-        // Sis botu öldürüldüğünde çağrılır
-        atesBildir() {
-            if (!EGITIM.aktif || EGITIM.adim !== 2) return;
-            if (!EGITIM.atesTamam) {
-                EGITIM.atesTamam = true;
-                adimIlerlet();
-            }
-        },
-
-        anahtarBildir() {
-            if (!EGITIM.aktif || EGITIM.adim !== 3) return;
-            if (!EGITIM.anahtarTamam) {
-                EGITIM.anahtarTamam = true;
-                adimIlerlet();
-            }
-        },
-
-        kapiBildir() {
-            if (!EGITIM.aktif || EGITIM.adim !== 4) return;
-            if (!EGITIM.kapiTamam) {
-                EGITIM.kapiTamam = true;
-                adimIlerlet();
-            }
-        },
-
-        // Sorgu
-        aktifMi() { return EGITIM.aktif; },
-        adimNo() { return EGITIM.adim; }
+    // ========== ODA SİSTEMİ ==========
+    KORKU.odaKaydet = function (id, odaObj) {
+        KORKU.odalar[id] = odaObj;
     };
 
-    console.log('[EĞİTİM] Katman hazır — KORKU_EGITIM API kullanılabilir.');
+    KORKU.odaYukle = function (id) {
+        const oda = KORKU.odalar[id];
+        if (!oda) { console.warn('Oda bulunamadı:', id); return; }
+        KORKU.oda = oda;
+        KORKU.odaId = id;
+        if (typeof oda.baslangic === 'function') oda.baslangic();
+        console.log('[KORKU] Oda yüklendi:', id);
+    };
+
+    // ========== FENER AÇ/KAPA ==========
+    window.KORKU_fenerDegistir = function () {
+        KORKU.fener = !KORKU.fener;
+    };
+
+    // ========== MOD KAYDI ==========
+    window.GAME_EXT.registerMode('korku', {
+        label: 'Korku',
+        tamEkranModu: true,
+        onStart: function () {
+            KORKU.aktif = true;
+            KORKU.fener = true;
+            KORKU.kameraShake = 0;
+            // Klasik botları devre dışı bırak
+            bot.isActive = false; bot.isDead = true;
+            bot2.isActive = false; bot2.isDead = true;
+            slimeBots = []; stationaryBots = []; boomerangBots = [];
+            fogBots = []; nests = []; spawnIndicators = [];
+            // İlk odayı yükle
+            const baslangicOda = KORKU._baslangicOda || 'bolum1_oda1';
+            KORKU.odaYukle(baslangicOda);
+        },
+        onReset: function () {
+            KORKU.aktif = false;
+            KORKU.oda = null;
+            KORKU.odaId = null;
+            KORKU.kameraShake = 0;
+            if (window.KORKU_EGITIM) window.KORKU_EGITIM.bitir();
+        }
+    });
+
+    // Mod kartı (tek satır)
+    window.GAME_EXT.modKartiEkle('korku', 'Korku', 'Buzluk — Bölüm 1: Uyanış');
+
+    // ========== GÜNCELLEME ==========
+    window.GAME_EXT.chainHook('onFullUpdate', function (ts) {
+        if (!KORKU.aktif || !KORKU.oda) return;
+        const dt = Math.min(ts * 0.0166, 0.1);
+
+        // Odanın güncelleme fonksiyonu
+        if (typeof KORKU.oda.guncelle === 'function') KORKU.oda.guncelle(dt);
+
+        // Kamera takibi
+        if (KORKU.oyuncu) {
+            const lerpF = 1 - Math.exp(-dt * CAMERA_LERP);
+            KORKU.kamera.x += (KORKU.oyuncu.x - KORKU.kamera.x) * lerpF;
+            KORKU.kamera.y += (KORKU.oyuncu.y - KORKU.kamera.y) * lerpF;
+        }
+
+        // Kamera sarsıntısı sönümü
+        if (KORKU.kameraShake > 0) KORKU.kameraShake = Math.max(0, KORKU.kameraShake - dt * 30);
+    });
+
+    // ========== ÇİZİM ==========
+    window.GAME_EXT.chainHook('onFullRender', function (ctx2) {
+        if (!KORKU.aktif || !KORKU.oda) return;
+
+        ctx2.fillStyle = '#05070a';
+        ctx2.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx2.save();
+        const shakeX = KORKU.kameraShake > 0 ? (Math.random() - 0.5) * KORKU.kameraShake : 0;
+        const shakeY = KORKU.kameraShake > 0 ? (Math.random() - 0.5) * KORKU.kameraShake : 0;
+        const cx = canvas.width / 2 - KORKU.kamera.x * CAMERA_ZOOM + shakeX;
+        const cy = canvas.height / 2 - KORKU.kamera.y * CAMERA_ZOOM + shakeY;
+        ctx2.translate(cx, cy);
+        ctx2.scale(CAMERA_ZOOM, CAMERA_ZOOM);
+
+        // Odanın çizim fonksiyonu
+        if (typeof KORKU.oda.ciz === 'function') KORKU.oda.ciz(ctx2);
+
+        ctx2.restore();
+
+        // Karanlık katmanı (ekran koordinatında)
+        cizKaranlik(ctx2);
+    });
+
+    // ========== KARANLIK KATMANI ==========
+    const darkCanvas = document.createElement('canvas');
+    const darkCtx = darkCanvas.getContext('2d');
+    function boyutGuncelle() {
+        darkCanvas.width = canvas.width;
+        darkCanvas.height = canvas.height;
+    }
+    window.addEventListener('resize', boyutGuncelle);
+    boyutGuncelle();
+
+    function cizKaranlik(ctx2) {
+        if (!KORKU.oyuncu) return;
+        if (darkCanvas.width !== canvas.width) boyutGuncelle();
+        darkCtx.clearRect(0, 0, darkCanvas.width, darkCanvas.height);
+        darkCtx.fillStyle = 'rgba(2,3,6,0.97)';
+        darkCtx.fillRect(0, 0, darkCanvas.width, darkCanvas.height);
+        const sx = canvas.width / 2 + (KORKU.oyuncu.x - KORKU.kamera.x) * CAMERA_ZOOM;
+        const sy = canvas.height / 2 + (KORKU.oyuncu.y - KORKU.kamera.y) * CAMERA_ZOOM;
+        const r = KORKU.gorusYaricap() * CAMERA_ZOOM;
+        const g = darkCtx.createRadialGradient(sx, sy, r * 0.15, sx, sy, r);
+        g.addColorStop(0, 'rgba(0,0,0,1)');
+        g.addColorStop(0.7, 'rgba(0,0,0,0.85)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        darkCtx.globalCompositeOperation = 'destination-out';
+        darkCtx.fillStyle = g;
+        darkCtx.beginPath();
+        darkCtx.arc(sx, sy, r, 0, Math.PI * 2);
+        darkCtx.fill();
+        darkCtx.globalCompositeOperation = 'source-over';
+        ctx2.drawImage(darkCanvas, 0, 0);
+    }
+
+    // ========== YARDIMCILAR ==========
+    KORKU.mesafe = function (a, b) { return Math.hypot(a.x - b.x, a.y - b.y); };
+    KORKU.WALL_THICKNESS = WALL_THICKNESS;
+    KORKU.CAMERA_ZOOM = CAMERA_ZOOM;
+
+    // ========== FENER BUTONU ==========
+    window.addEventListener('load', function () {
+        const btn = document.getElementById('korkuFenerBtn');
+        if (btn) btn.addEventListener('pointerdown', function (e) {
+            e.preventDefault();
+            KORKU.fener = !KORKU.fener;
+            btn.textContent = KORKU.fener ? '💡' : '🔦';
+            btn.style.borderColor = KORKU.fener ? '#f1c40f' : '#4a4a5a';
+            btn.style.color = KORKU.fener ? '#f1c40f' : '#4a4a5a';
+        });
+    });
+
+    console.log('[KORKU] Motor hazır.');
 })();
