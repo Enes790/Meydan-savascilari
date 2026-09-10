@@ -8,8 +8,7 @@
 //   - emit, on: Olay yayınlama/dinleme
 //   - chainHook: Zincirleme hook sistemi
 //   - modKartiEkle: Mod seçim ekranına kart ekleme yardımcısı
-//   - wrapDrawFunction, wrapUpdateFunction, wrapChargeUltiFunction:
-//     Ana fonksiyonları sarmalar, hook'ları tetikler
+//   - draw/update/chargeUlti sarmalayıcıları: Hook'ları tetikler
 //
 // Ana oyuna dokunulmadan çalışır.
 
@@ -115,6 +114,8 @@
     };
 
     // ========== ÇİZİM SARMALAYICI ==========
+    // window.draw'u sarmalar, hook'ları sırayla tetikler.
+    // onPreDraw -> orijinal draw -> onAimDraw -> onDraw -> onPostDraw
     function wrapDrawFunction() {
         if (typeof window.draw !== 'function') {
             console.warn('core.js: window.draw bulunamadı, çizim sarmalayıcı kurulmadı.');
@@ -132,6 +133,7 @@
     }
 
     // ========== GÜNCELLEME SARMALAYICI ==========
+    // window.update'i sarmalar, onUpdate hook'unu tetikler.
     function wrapUpdateFunction() {
         if (typeof window.update !== 'function') {
             console.warn('core.js: window.update bulunamadı, güncelleme sarmalayıcı kurulmadı.');
@@ -148,9 +150,10 @@
     }
 
     // ========== ULTİ DOLDURMA SARMALAYICI ==========
+    // window.chargeUlti'yi sarmalar, onChargeUlti hook'unu tetikler.
     function wrapChargeUltiFunction() {
         if (typeof window.chargeUlti !== 'function') {
-            console.warn('core.js: window.chargeUlti bulunamadı.');
+            console.warn('core.js: window.chargeUlti bulunamadı, ulti sarmalayıcı kurulmadı.');
             return;
         }
         const originalChargeUlti = window.chargeUlti;
