@@ -1,14 +1,18 @@
 // ========== core.js (MERKEZİ KAYIT VE OLAY SİSTEMİ) ==========
-// Bu dosya, modüllerin ana oyunu ezmesini önler.
-// Modüller artık window.draw, window.update gibi global fonksiyonları
-// doğrudan değiştirmek yerine buradaki register ve on fonksiyonlarını kullanır.
-// Ana oyun dosyasına dokunmadan çalışır.
+// Modüller ana oyunu ezmeden çalışır.
+// Bu sürümde ek olarak:
+//   - tamEkranModu desteği (korku modu gibi kendi kamera/draw sistemini
+//     kuran modlar için, ana update/draw devre dışı kalır)
+//   - onFullUpdate / onFullRender hook'ları
+//   - GAME_EXT.modKartiEkle() yardımcısı (mod kartı eklemeyi kolaylaştırır)
+// Ana oyuna dokunulmadan çalışır.
 
 (function () {
     'use strict';
 
     // GAME_EXT objesini garanti altına al
     window.GAME_EXT = window.GAME_EXT || { modes: {}, characters: {}, hooks: {} };
+    window.GAME_EXT.hooks = window.GAME_EXT.hooks || {};
 
     // ========== MOD KAYIT ==========
     window.GAME_EXT.registerMode = function (id, modObj) {
@@ -39,26 +43,17 @@
         const handlers = window.GAME_EXT._eventHandlers && window.GAME_EXT._eventHandlers[eventName];
         if (handlers) {
             for (const handler of handlers) {
-                try {
-                    handler(data);
-                } catch (e) {
-                    console.error('Olay işleyici hatası (' + eventName + '):', e);
-                }
+                try { handler(data); }
+                catch (e) { console.error('Olay işleyici hatası (' + eventName + '):', e); }
             }
         }
     };
 
     // ========== OLAY DİNLEME ==========
     window.GAME_EXT.on = function (eventName, callback) {
-        if (!window.GAME_EXT._eventHandlers) {
-            window.GAME_EXT._eventHandlers = {};
-        }
-        if (!window.GAME_EXT._eventHandlers[eventName]) {
-            window.GAME_EXT._eventHandlers[eventName] = [];
-        }
+        if (!window.GAME_EXT._eventHandlers) window.GAME_EXT._eventHandlers = {};
+        if (!window.GAME_EXT._eventHandlers[eventName]) window.GAME_EXT._eventHandlers[eventName] = [];
         window.GAME_EXT._eventHandlers[eventName].push(callback);
-
-        // Dinlemeyi kaldırmak için fonksiyon döndür
         return function () {
             const arr = window.GAME_EXT._eventHandlers[eventName];
             if (arr) {
@@ -74,9 +69,7 @@
         const prev = window.GAME_EXT.hooks[hookName];
         window.GAME_EXT.hooks[hookName] = function (...args) {
             let prevResult;
-            if (typeof prev === 'function') {
-                prevResult = prev.apply(this, args);
-            }
+            if (typeof prev === 'function') prevResult = prev.apply(this, args);
             const ownResult = fn.apply(this, args);
             if (typeof prevResult === 'boolean' || typeof ownResult === 'boolean') {
                 return !!prevResult || !!ownResult;
@@ -85,94 +78,119 @@
         };
     };
 
-    // ========== ÇİZİM SARMALAYICI (DRAW WRAPPER) ==========
+    // ========== MOD KARTI EKLEME YARDIMCISI ==========
+    // Her mod dosyası tek satırla kendi kartını ekler, tekrar kod yok.
+    window.GAME_EXT.modKartiEkle = function (id, baslik, aciklama) {
+        const track = document.getElementById('difficulty-track');
+        if (!track) {
+            console.warn('modKartiEkle: difficulty-track bulunamadı.');
+            return;
+        }
+        if (document.getElementById('diff-' + id)) return;
+        const card = document.createElement('div');
+        card.className = 'diff-card';
+        card.id = 'diff-' + id;
+        card.style.flex = '0 0 auto';
+        card.style.width = 'min(76vw,300px)';
+        card.style.margin = '5px auto';
+        card.style.padding = '15px 10px';
+        card.innerHTML = '<span>' + baslik + '</span><small>' + aciklama + '</small>';
+        track.appendChild(card);
+        const secFn = () => {
+            document.querySelectorAll('.diff-card').forEach(c => c.classList.remove('selected'));
+            card.classList.add('selected');
+            window.GAME_MODE = id;
+        };
+        card.addEventListener('click', secFn);
+        card.addEventListener('touchstart', secFn, { passive: true });
+        console.log('[MOD KARTI] ' + id + ' eklendi.');
+    };
+
+    // ========== TAM EKRAN MODU KONTROLÜ ==========
+    // Bir mod "tamEkranModu = true" olarak kaydedilirse, ana update/draw
+    // tamamen atlanır ve sadece o modun onFullUpdate/onFullRender hook'ları
+    // çağrılır. Böylece korku modu gibi kendi kamera/draw sistemini kuran
+    // modlar ana oyunun kurallarına bağlı kalmaz.
+    function tamEkranModuAktifMi() {
+        const aktifMod = window.GAME_EXT.modes[window.GAME_MODE];
+        return !!(aktifMod && aktifMod.tamEkranModu === true);
+    }
+
+    // ========== ÇİZİM SARMALAYICI ==========
     function wrapDrawFunction() {
         if (typeof window.draw !== 'function') {
             console.warn('core.js: window.draw bulunamadı, çizim sarmalayıcı kurulmadı.');
             return;
         }
-
         const originalDraw = window.draw;
-
         window.draw = function () {
-            // 1) Çizim öncesi hook
-            if (typeof window.GAME_EXT.hooks.onPreDraw === 'function') {
-                window.GAME_EXT.hooks.onPreDraw(ctx);
+            // Tam ekran modu: ana çizimi atla, sadece modun çizimini yap
+            if (tamEkranModuAktifMi()) {
+                if (typeof window.GAME_EXT.hooks.onFullRender === 'function') {
+                    window.GAME_EXT.hooks.onFullRender(ctx);
+                }
+                return;
             }
-
-            // 2) Ana çizim
+            if (typeof window.GAME_EXT.hooks.onPreDraw === 'function') window.GAME_EXT.hooks.onPreDraw(ctx);
             originalDraw();
-
-            // 3) Nişan çizimi hook'u
-            if (typeof window.GAME_EXT.hooks.onAimDraw === 'function') {
-                window.GAME_EXT.hooks.onAimDraw(ctx);
-            }
-
-            // 4) Genel çizim hook'u
-            if (typeof window.GAME_EXT.hooks.onDraw === 'function') {
-                window.GAME_EXT.hooks.onDraw(ctx);
-            }
-
-            // 5) Çizim sonrası hook
-            if (typeof window.GAME_EXT.hooks.onPostDraw === 'function') {
-                window.GAME_EXT.hooks.onPostDraw(ctx);
-            }
+            if (typeof window.GAME_EXT.hooks.onAimDraw === 'function') window.GAME_EXT.hooks.onAimDraw(ctx);
+            if (typeof window.GAME_EXT.hooks.onDraw === 'function') window.GAME_EXT.hooks.onDraw(ctx);
+            if (typeof window.GAME_EXT.hooks.onPostDraw === 'function') window.GAME_EXT.hooks.onPostDraw(ctx);
         };
-
         console.log('core.js: window.draw sarmalayıcısı kuruldu.');
     }
 
-    // ========== GÜNCELLEME SARMALAYICI (UPDATE WRAPPER) ==========
+    // ========== GÜNCELLEME SARMALAYICI ==========
     function wrapUpdateFunction() {
         if (typeof window.update !== 'function') {
             console.warn('core.js: window.update bulunamadı, güncelleme sarmalayıcı kurulmadı.');
             return;
         }
-
         const originalUpdate = window.update;
-
         window.update = function (ts) {
-            // 1) Orijinal güncellemeyi çalıştır
+            // Tam ekran modu: ana güncellemeyi atla, sadece modun güncellemesini yap
+            if (tamEkranModuAktifMi()) {
+                if (typeof window.GAME_EXT.hooks.onFullUpdate === 'function') {
+                    window.GAME_EXT.hooks.onFullUpdate(ts);
+                }
+                return;
+            }
             originalUpdate(ts);
-
-            // 2) onUpdate hook'unu tetikle
             if (typeof window.GAME_EXT.hooks.onUpdate === 'function') {
                 window.GAME_EXT.hooks.onUpdate(ts);
             }
         };
-
         console.log('core.js: window.update sarmalayıcısı kuruldu.');
     }
 
-    // ========== ULTİ DOLDURMA SARMALAYICI (CHARGE ULTI WRAPPER) ==========
+    // ========== ULTİ DOLDURMA SARMALAYICI ==========
     function wrapChargeUltiFunction() {
         if (typeof window.chargeUlti !== 'function') {
-            console.warn('core.js: window.chargeUlti bulunamadı, ulti dolum sarmalayıcı kurulmadı.');
+            console.warn('core.js: window.chargeUlti bulunamadı.');
             return;
         }
-
         const originalChargeUlti = window.chargeUlti;
-
         window.chargeUlti = function (amount) {
-            // 1) Orijinal dolumu çağır
             originalChargeUlti(amount);
-
-            // 2) onChargeUlti hook'unu tetikle
             if (typeof window.GAME_EXT.hooks.onChargeUlti === 'function') {
                 window.GAME_EXT.hooks.onChargeUlti(amount);
             }
         };
-
         console.log('core.js: window.chargeUlti sarmalayıcısı kuruldu.');
     }
 
-    // ========== Varsayılan Hook'ları Tanımla ==========
-    window.GAME_EXT.hooks.onPreDraw = window.GAME_EXT.hooks.onPreDraw || function () {};
-    window.GAME_EXT.hooks.onAimDraw = window.GAME_EXT.hooks.onAimDraw || function () {};
-    window.GAME_EXT.hooks.onDraw = window.GAME_EXT.hooks.onDraw || function () {};
-    window.GAME_EXT.hooks.onPostDraw = window.GAME_EXT.hooks.onPostDraw || function () {};
-    window.GAME_EXT.hooks.onUpdate = window.GAME_EXT.hooks.onUpdate || function () {};
-    window.GAME_EXT.hooks.onChargeUlti = window.GAME_EXT.hooks.onChargeUlti || function () {};
+    // ========== Varsayılan Hook'lar ==========
+    const varsayilanHooklar = [
+        'onPreDraw', 'onAimDraw', 'onDraw', 'onPostDraw',
+        'onUpdate', 'onChargeUlti', 'onReset',
+        'onFullUpdate', 'onFullRender',
+        'getExtraEnemies', 'getBotTarget', 'getEngageDistance',
+        'getExtraTargets', 'onEnemyKilled', 'onObstacleTick',
+        'onBotSpawnTick', 'checkGameOver'
+    ];
+    varsayilanHooklar.forEach(h => {
+        window.GAME_EXT.hooks[h] = window.GAME_EXT.hooks[h] || function () {};
+    });
 
     // ========== Sarmalayıcıları Kur ==========
     wrapDrawFunction();
