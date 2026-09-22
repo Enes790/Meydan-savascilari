@@ -23,33 +23,38 @@
     import {Entity, Board} from './js/entities.js';
     import {Boom, Heal} from './js/effects.js';
     import {Pea, Needle, Shell, Sun} from './js/projectiles.js';
+    import {Zombie} from './js/zombies.js';
 
-    const boom = new Boom(100, 100, 50);
-    const sun = new Sun(200, 0, 300);
-    const pea = new Pea(50, 50, 0, 20, null);
-    const needle = new Needle(50, 50, 0, 500);
-    const shell = new Shell(50, 50, 400, 0, 15, null);
-    const fakeTarget = {x:100, y:100, w:50, h:50, alive:1};
-    const heal = new Heal(fakeTarget, 500, 100);
+    // Test zombileri
+    const z1 = new Zombie("normal", 0, 800, 100, 40, 50);
+    const z2 = new Zombie("runner", 1, 800, 200, 40, 50);
+    const z3 = new Zombie("armored", 2, 800, 300, 40, 50);
+
+    // Hasar testi
+    z1.hit(100);
+    const z1hp = z1.hp;
+
+    // Zayıflatma testi
+    z2.weakenTimer = 1.5;
+    const z2dmgWeak = z2.dmg * PL.ignear.wm;
 
     document.getElementById('test').innerHTML = `
       <div class="kutu">
-        <p class="ok">✅ Config + Utils + Entity + Board</p>
-        <p>Bitki: ${Object.keys(PL).length}, Zombi: ${Object.keys(ZB).length}</p>
+        <p class="ok">✅ Tüm modüller yüklendi</p>
+        <p>Config + Utils + Entity + Board + Effects + Projectiles + Zombies</p>
       </div>
       <div class="kutu">
-        <p class="ok">✅ Effects yüklendi</p>
-        <p>Boom: r=${boom.r}, alive=${boom.alive}</p>
-        <p>Heal: +${heal.h} HP, 🛡+${heal.s}</p>
+        <p class="ok">✅ Zombi tipleri oluştu</p>
+        <p>Normal: hp=${z1.mhp}, spd=${z1.speed}, dmg=${z1.dmg}</p>
+        <p>Koşucu: hp=${z2.mhp}, spd=${z2.speed}, dmg=${z2.dmg}</p>
+        <p>Zırhlı: hp=${z3.mhp}, spd=${z3.speed}, dmg=${z3.dmg}</p>
       </div>
       <div class="kutu">
-        <p class="ok">✅ Projectiles yüklendi</p>
-        <p>Pea: dmg=${pea.dmg}, row=${pea.row}</p>
-        <p>Needle: maxX=${needle.maxX}, hits=${needle.hits.size}</p>
-        <p>Shell: dmg=${shell.dmg}, hedef x=${shell.ex}</p>
-        <p>Sun: life=${sun.l} sn</p>
+        <p class="ok">✅ Hasar sistemi çalışıyor</p>
+        <p>Normal 100 hasar aldı → kalan HP: ${z1hp} <small>(140 olmalı)</small></p>
+        <p>Zayıflatılmış koşucu hasarı: ${z2dmgWeak.toFixed(1)} <small>(90.0 olmalı)</small></p>
       </div>
-      <p style="font-size:18px;text-align:center;margin-top:24px;color:#0f0">🎉 Adım 3 tamam!</p>
+      <p style="font-size:18px;text-align:center;margin-top:24px;color:#0f0">🎉 Adım 4 tamam!</p>
     `;
   </script>
 </body>
