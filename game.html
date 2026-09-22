@@ -20,25 +20,51 @@
   <script type="module">
     import {CFG, PL, ZB, BADGE} from './js/config.js';
     import {cl, ri, rf, col} from './js/utils.js';
+    import {Entity, Board} from './js/entities.js';
 
     const bitkiSayisi = Object.keys(PL).length;
     const zombiSayisi = Object.keys(ZB).length;
 
+    // Entity testi
+    const testEntity = new Entity(100, 200, 50, 50);
+    testEntity.alive = 0;
+
+    // Board testi (9x5 grid, 50px hücre, sol üst köşe 0,0)
+    const b = new Board(CFG.COLS, CFG.ROWS, 50, 0, 0);
+
+    // Hücre testleri
+    const cell1 = b.cellAt(75, 25);      // → row:0, col:1
+    const cell2 = b.cellAt(260, 130);    // → row:2, col:5
+    const cell3 = b.cellAt(-10, 0);      // → null (dışarıda)
+    const merkez = b.center(1, 2);       // → row:1, col:2 merkezi
+
+    // Grid'e bitki koy
+    b.place(2, 3, {em:"🌻"});
+    const dolu = !b.isFree(2, 3);        // → true
+    const bos = b.isFree(0, 0);          // → true (boş)
+
     document.getElementById('test').innerHTML = `
       <div class="kutu">
-        <p class="ok">✅ Config yüklendi</p>
-        <p>Sütun: ${CFG.COLS}, Satır: ${CFG.ROWS}</p>
-        <p>Bitki sayısı: ${bitkiSayisi}</p>
-        <p>Zombi sayısı: ${zombiSayisi}</p>
+        <p class="ok">✅ Config + Utils yüklendi</p>
+        <p>Bitki: ${bitkiSayisi}, Zombi: ${zombiSayisi}</p>
       </div>
       <div class="kutu">
-        <p class="ok">✅ Utils yüklendi</p>
-        <p>cl(150, 0, 100) = ${cl(150, 0, 100)} <small>(100 olmalı)</small></p>
-        <p>ri(1, 5) = ${ri(1, 5)} <small>(1-5 arası)</small></p>
-        <p>rf(0, 1) = ${rf(0, 1).toFixed(3)} <small>(0-1 arası)</small></p>
-        <p>col(a, b) = ${col({x:0,y:0,w:10,h:10}, {x:5,y:5,w:10,h:10})} <small>(true olmalı)</small></p>
+        <p class="ok">✅ Entity yüklendi</p>
+        <p>Konum: ${testEntity.x}, ${testEntity.y}</p>
+        <p>Yaşıyor mu: ${testEntity.alive}</p>
+        <p>rect: x=${testEntity.rect.x}, w=${testEntity.rect.w}</p>
       </div>
-      <p style="font-size:18px;text-align:center;margin-top:24px;color:#0f0">🎉 Her şey çalışıyor!</p>
+      <div class="kutu">
+        <p class="ok">✅ Board yüklendi</p>
+        <p>Grid: ${b.cols}x${b.rows}, hücre: ${b.cw}px</p>
+        <p>cellAt(75,25) = row:${cell1.row}, col:${cell1.col} <small>(0,1 olmalı)</small></p>
+        <p>cellAt(260,130) = row:${cell2.row}, col:${cell2.col} <small>(2,5 olmalı)</small></p>
+        <p>cellAt(-10,0) = ${cell3} <small>(null olmalı)</small></p>
+        <p>center(1,2) = x:${merkez.x}, y:${merkez.y} <small>(125, 75 olmalı)</small></p>
+        <p>place sonrası (2,3) dolu mu: ${dolu} <small>(true)</small></p>
+        <p>(0,0) boş mu: ${bos} <small>(true)</small></p>
+      </div>
+      <p style="font-size:18px;text-align:center;margin-top:24px;color:#0f0">🎉 Adım 2 tamam!</p>
     `;
   </script>
 </body>
