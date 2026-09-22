@@ -17,41 +17,40 @@
   <h1>🌻 PvZ Fan - Modüler Test</h1>
   <div id="test">Yükleniyor...</div>
 
- <script type="module">
-  import {CFG, PL, ZB, BADGE} from './js/config.js';
-  import {cl, ri, rf, col} from './js/utils.js';
-  import {Entity, Board} from './js/entities.js';
-  import {Boom, Heal} from './js/effects.js';
-  import {Pea, Needle, Shell, Sun} from './js/projectiles.js';
+  <script type="module">
+    import {CFG, PL, ZB, BADGE} from './js/config.js';
+    import {cl, ri, rf, col} from './js/utils.js';
+    import {Entity, Board} from './js/entities.js';
+    import {Boom, Heal} from './js/effects.js';
+    import {Pea, Needle, Shell, Sun} from './js/projectiles.js';
 
-  // Test objeleri
-  const boom = new Boom(100, 100, 50);
-  const sun = new Sun(200, 0, 300);
-  const pea = new Pea(50, 50, 0, 20, null);
-  const needle = new Needle(50, 50, 0, 500);
-  const shell = new Shell(50, 50, 400, 0, 15, null);
-  const fakeTarget = {x:100, y:100, w:50, h:50, alive:1};
-  const heal = new Heal(fakeTarget, 500, 100);
+    const boom = new Boom(100, 100, 50);
+    const sun = new Sun(200, 0, 300);
+    const pea = new Pea(50, 50, 0, 20, null);
+    const needle = new Needle(50, 50, 0, 500);
+    const shell = new Shell(50, 50, 400, 0, 15, null);
+    const fakeTarget = {x:100, y:100, w:50, h:50, alive:1};
+    const heal = new Heal(fakeTarget, 500, 100);
 
-  document.getElementById('test').innerHTML = `
-    <div class="kutu">
-      <p class="ok">✅ Config + Utils + Entity + Board</p>
-      <p>Bitki: ${Object.keys(PL).length}, Zombi: ${Object.keys(ZB).length}</p>
-    </div>
-    <div class="kutu">
-      <p class="ok">✅ Effects yüklendi</p>
-      <p>Boom: r=${boom.r}, alive=${boom.alive}</p>
-      <p>Heal: +${heal.h} HP, 🛡+${heal.s}</p>
-    </div>
-    <div class="kutu">
-      <p class="ok">✅ Projectiles yüklendi</p>
-      <p>Pea: dmg=${pea.dmg}, row=${pea.row}</p>
-      <p>Needle: maxX=${needle.maxX}, hits=${needle.hits.size}</p>
-      <p>Shell: dmg=${shell.dmg}, hedef x=${shell.ex}</p>
-      <p>Sun: life=${sun.l} sn</p>
-    </div>
-    <p style="font-size:18px;text-align:center;margin-top:24px;color:#0f0">🎉 Adım 3 tamam!</p>
-  `;
-</script>
+    document.getElementById('test').innerHTML = `
+      <div class="kutu">
+        <p class="ok">✅ Config + Utils + Entity + Board</p>
+        <p>Bitki: ${Object.keys(PL).length}, Zombi: ${Object.keys(ZB).length}</p>
+      </div>
+      <div class="kutu">
+        <p class="ok">✅ Effects yüklendi</p>
+        <p>Boom: r=${boom.r}, alive=${boom.alive}</p>
+        <p>Heal: +${heal.h} HP, 🛡+${heal.s}</p>
+      </div>
+      <div class="kutu">
+        <p class="ok">✅ Projectiles yüklendi</p>
+        <p>Pea: dmg=${pea.dmg}, row=${pea.row}</p>
+        <p>Needle: maxX=${needle.maxX}, hits=${needle.hits.size}</p>
+        <p>Shell: dmg=${shell.dmg}, hedef x=${shell.ex}</p>
+        <p>Sun: life=${sun.l} sn</p>
+      </div>
+      <p style="font-size:18px;text-align:center;margin-top:24px;color:#0f0">🎉 Adım 3 tamam!</p>
+    `;
+  </script>
 </body>
 </html>
