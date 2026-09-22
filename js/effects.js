@@ -4,6 +4,7 @@ import {Entity} from './entities.js';
 export class Boom extends Entity {
   constructor(x,y,r,c){
     super(x,y,r,r);
+    this.r = r;
     this.l=.5; this.ml=.5;
     this.c1 = c ? c[0] : "255,180,0";
     this.c2 = c ? c[1] : "255,80,0";
