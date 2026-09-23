@@ -18,9 +18,29 @@ export class Zombie extends Entity {
     this.freezeTimer = 0;
     this.slowTimer = 0;
     this.slowMult = 1;
+    // Boksör için form sistemi
+    this.form = 1;
+    this.state = "walking";
+    this.formTimer = 0;
+    // Kraliçe için eşik takibi
+    this._lastThreshold = 0;
+    // Dev için mini flag (görsel)
+    this.isMini = false;
   }
 
   update(dt, g){
+    // Boksör: baygın — hiçbir şey yapma, sadece sayaç
+    if(this.state === "downed"){
+      this.formTimer -= dt;
+      if(this.formTimer <= 0){
+        this.form = 2;
+        this.state = "walking";
+        this.hp = 300;
+        this.mhp = 300;
+      }
+      return;
+    }
+
     if(this.weakenTimer > 0) this.weakenTimer -= dt;
     if(this.stunTimer > 0) this.stunTimer -= dt;
     if(this.freezeTimer > 0) this.freezeTimer -= dt;
@@ -31,13 +51,30 @@ export class Zombie extends Entity {
       this.burnTimer -= dt;
     }
 
+    // Kraliçe: 50 can gidince küçük doğur
+    if(this.type === "kralice" && this.alive){
+      const lost = this.mhp - this.hp;
+      const threshold = Math.floor(lost / 50);
+      if(threshold > this._lastThreshold){
+        this._lastThreshold = threshold;
+        g.spawnMiniZombie(this);
+      }
+    }
+
     // Donmuş: hiçbir şey yapamaz
     if(this.freezeTimer > 0) return;
+
+    // Boksör 1. form: bitkileri yok say, sadece yürü
+    if(this.type === "boksor" && this.form === 1){
+      this.x -= this.speed * dt;
+      if(this.x + this.w < g.board.ox) g.gameOver();
+      return;
+    }
 
     const dmg = this.weakenTimer > 0 ? this.dmg * PL.ignear.wm : this.dmg;
     const target = g.plantInFront(this);
 
-    // Sersemleşmiş: yer ama hareket edemez
+    // Sersemleşmiş: yer ama yürümez
     if(this.stunTimer > 0){
       if(target) target.hit(dmg * dt);
       return;
@@ -47,21 +84,47 @@ export class Zombie extends Entity {
     let spd = this.speed;
     if(this.slowTimer > 0) spd *= this.slowMult;
 
-    if(target) target.hit(dmg * dt);
-    else this.x -= spd * dt;
+    if(target){
+      target.hit(dmg * dt);
+      // Boksör 2. form: üst + alt satıra yarı hasar
+      if(this.type === "boksor" && this.form === 2){
+        const above = this.row - 1;
+        const below = this.row + 1;
+        for(const p of g.plants){
+          if(!p.alive) continue;
+          if(p.row === above || p.row === below){
+            p.hit(dmg * 0.5 * dt);
+          }
+        }
+      }
+    } else {
+      this.x -= spd * dt;
+    }
 
     if(this.x + this.w < g.board.ox) g.gameOver();
   }
 
   hit(d){
+    // Baygın boksör hasar almaz
+    if(this.state === "downed") return;
     this.hp -= d;
-    if(this.hp <= 0) this.alive = 0;
+    if(this.hp <= 0){
+      // Boksör 1. form: bayıl, sonra diril
+      if(this.type === "boksor" && this.form === 1){
+        this.state = "downed";
+        this.formTimer = 1.5;
+        return;
+      }
+      this.alive = 0;
+    }
   }
 
   draw(ctx){
+    // Gövde
     ctx.fillStyle = this.color;
     ctx.fillRect(this.x, this.y, this.w, this.h);
 
+    // Freeze tint
     if(this.freezeTimer > 0){
       ctx.fillStyle = "rgba(120,200,255,0.55)";
       ctx.fillRect(this.x, this.y, this.w, this.h);
@@ -70,11 +133,19 @@ export class Zombie extends Entity {
       ctx.fillRect(this.x, this.y, this.w, this.h);
     }
 
+    // Weaken tint
     if(this.weakenTimer > 0){
       ctx.fillStyle = "rgba(160,80,220,.35)";
       ctx.fillRect(this.x, this.y, this.w, this.h);
     }
 
+    // Boksör 2. form kırmızı tint
+    if(this.type === "boksor" && this.form === 2 && this.state !== "downed"){
+      ctx.fillStyle = "rgba(255,0,0,0.25)";
+      ctx.fillRect(this.x, this.y, this.w, this.h);
+    }
+
+    // Burn tint
     if(this.burnTimer > 0){
       const pu = .4 + .3 * Math.sin(performance.now()/100);
       ctx.fillStyle = `rgba(255,120,0,${pu})`;
@@ -85,11 +156,13 @@ export class Zombie extends Entity {
       ctx.fillText("🔥", this.x+this.w*.5, this.y+this.h*.15);
     }
 
+    // Zombi emoji
     ctx.font = `${this.h*.55}px serif`;
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
     ctx.fillText("🧟", this.x, this.y+this.h/2);
 
+    // Rozet
     const badge = BADGE[this.type];
     if(badge){
       ctx.font = `${this.h*(this.type==="armored"?.35:.3)}px serif`;
@@ -99,12 +172,40 @@ export class Zombie extends Entity {
         this.y + this.h*(this.type==="runner"?.25:.3));
     }
 
+    // Kraliçe taç
+    if(this.type === "kralice"){
+      ctx.font = `${this.h*0.35}px serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillText("👑", this.x + this.w/2, this.y - this.h*0.15);
+    }
+
+    // Boksör 2. form eldiven
+    if(this.type === "boksor" && this.form === 2 && this.state !== "downed"){
+      ctx.font = `${this.h*0.4}px serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("🥊", this.x + this.w/2, this.y + this.h*0.85);
+    }
+
+    // Boksör baygın görsel
+    if(this.state === "downed"){
+      ctx.fillStyle = "rgba(0,0,0,0.5)";
+      ctx.fillRect(this.x, this.y + this.h*0.5, this.w, this.h*0.5);
+      ctx.font = `${this.h*0.35}px serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("💫", this.x + this.w/2, this.y + this.h*0.3);
+    }
+
+    // Weaken ikonu
     if(this.weakenTimer > 0){
       ctx.font = `${this.h*.28}px serif`;
       ctx.textAlign = "center";
       ctx.fillText("💜", this.x+this.w*.85, this.y+this.h*.15);
     }
 
+    // Freeze / stun ikonu
     if(this.freezeTimer > 0){
       ctx.font = `${this.h*.35}px serif`;
       ctx.textAlign = "center";
@@ -117,9 +218,10 @@ export class Zombie extends Entity {
       ctx.fillText("💫", this.x+this.w*.5, this.y+this.h*.15);
     }
 
+    // HP bar
     ctx.fillStyle = "#000";
     ctx.fillRect(this.x, this.y-4, this.w, 3);
-    ctx.fillStyle = this.burnTimer>0 ? "#ff8c00" : "#f00";
+    ctx.fillStyle = this.burnTimer>0 ? "#ff8c00" : (this.type==="boksor" && this.form===2 ? "#ff0066" : "#f00");
     ctx.fillRect(this.x, this.y-4, this.w*(this.hp/this.mhp), 3);
   }
 }
