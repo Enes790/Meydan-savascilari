@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JS Test</title>
+<style>
+  body{background:#1a1a2e;color:#fff;font-family:monospace;padding:16px;font-size:14px;line-height:1.8;margin:0}
+  h2{color:#4caf50;font-size:18px}
+  .ok{color:#0f0;padding:6px 0}
+  .fail{color:#fff;background:#c00;padding:10px;border-radius:6px;margin:6px 0;word-break:break-all}
+</style>
+</head>
+<body>
+<h2>🔍 JS Dosya Testi</h2>
+<div id="out">Test başlıyor...</div>
+
+<script type="module">
+const out = document.getElementById("out");
+out.innerHTML = "";
+
+const log = (msg, ok) => {
+  const d = document.createElement("div");
+  d.className = ok ? "ok" : "fail";
+  d.textContent = msg;
+  out.appendChild(d);
+};
+
+async function test(name, path){
+  try {
+    await import(path);
+    log("✅ " + name + " → YÜKLENDİ", true);
+  } catch(e){
+    log("❌ " + name + " → " + e.message, false);
+  }
+}
+
+await test("config.js", "./js/config.js");
+await test("utils.js", "./js/utils.js");
+await test("entities.js", "./js/entities.js");
+await test("effects.js", "./js/effects.js");
+await test("projectiles.js", "./js/projectiles.js");
+await test("zombies.js", "./js/zombies.js");
+await test("plants.js", "./js/plants.js");
+await test("game.js", "./js/game.js");
+
+log("--- Test tamamlandı ---", true);
+</script>
+</body>
+</html>
