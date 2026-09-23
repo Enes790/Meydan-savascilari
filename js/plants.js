@@ -163,7 +163,57 @@ function drawAlev(p, ctx){
   ctx.beginPath(); ctx.arc(cx, cy, p.w*.07, 0, 6.28); ctx.fill();
 }
 
-const DW = {spike:drawSpike, anakok:drawAna, alev:drawAlev};
+// YENİ: Cehennem çizimi (volkanik + lazer)
+function drawCehennem(p, ctx){
+  const cx = p.x+p.w/2;
+  const cy = p.y+p.h*.5;
+  // Volkanik üçgen gövde
+  ctx.fillStyle="#4a1a1a";
+  ctx.beginPath();
+  ctx.moveTo(cx-p.w*.35, p.y+p.h*.85);
+  ctx.lineTo(cx, p.y+p.h*.2);
+  ctx.lineTo(cx+p.w*.35, p.y+p.h*.85);
+  ctx.closePath();
+  ctx.fill();
+  // Lav yarığı
+  ctx.strokeStyle="#ff4500";
+  ctx.lineWidth=2;
+  ctx.beginPath();
+  ctx.moveTo(cx-p.w*.15, p.y+p.h*.5);
+  ctx.lineTo(cx, p.y+p.h*.3);
+  ctx.lineTo(cx+p.w*.15, p.y+p.h*.5);
+  ctx.stroke();
+  // Emoji
+  ctx.font=`${p.h*.5}px serif`;
+  ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillText("🌋", cx, p.y+p.h*.65);
+  // Lazer çizimi (hedef varsa)
+  if(p.laserTarget && p.laserTarget.alive){
+    const tx = p.laserTarget.x + p.laserTarget.w/2;
+    const ty = p.laserTarget.y + p.laserTarget.h/2;
+    let thick = 2;
+    if(p.rampTime >= 16) thick = 6;
+    else if(p.rampTime >= 13) thick = 5;
+    else if(p.rampTime >= 8) thick = 4;
+    else if(p.rampTime >= 3) thick = 3;
+    // Dış parlama
+    ctx.strokeStyle = `rgba(255,80,0,0.4)`;
+    ctx.lineWidth = thick + 4;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(tx, ty);
+    ctx.stroke();
+    // İç çekirdek (max'ta sarımsı)
+    ctx.strokeStyle = p.rampTime >= 16 ? "#ffe066" : "#ff4500";
+    ctx.lineWidth = thick;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(tx, ty);
+    ctx.stroke();
+  }
+}
+
+const DW = {spike:drawSpike, anakok:drawAna, alev:drawAlev, cehennem:drawCehennem};
 
 // ============ BİTKİ DAVRANIŞLARI ============
 const findFirst = (p, g) => {
@@ -309,7 +359,6 @@ export const BH = {
     }
   },
   buzul(p, dt, g){
-    // Ölüm anı: 3x3 alandaki zombileri dondur (bir kere)
     if(!p.alive && !p.frozen){
       p.frozen = true;
       const cx = p.x + p.w/2, cy = p.y + p.h/2;
@@ -325,7 +374,6 @@ export const BH = {
       return;
     }
     if(!p.alive) return;
-    // Pasif aura: 3x3 alandaki zombileri yavaşlat
     const cx = p.x + p.w/2, cy = p.y + p.h/2;
     const r = g.board.cw * PL.buzul.auraR;
     const r2 = r*r;
@@ -337,6 +385,58 @@ export const BH = {
         z.slowMult = 1 - PL.buzul.slow;
       }
     }
+  },
+  zipkin(p, dt, g){
+    p.cd -= dt;
+    const end = p.x + p.w + g.board.cw * PL.zipkin.rt;
+    if(p.cd<=0 && g.zombies.some(z => z.alive && z.row===p.row && z.x > p.x+p.w && z.x < end)){
+      p.cd = PL.zipkin.cd;
+      g.needles.push(new Needle(p.x+p.w, p.y+p.h*.4, p.row, end, PL.zipkin.dmg, PL.zipkin.pierce, false));
+    }
+  },
+  tepkiliMayin(p, dt, g){
+    if(p.state === undefined){ p.state = "arming"; p.armTimer = PL.tepkiliMayin.arm; }
+    if(p.state === "arming"){
+      p.armTimer -= dt;
+      if(p.armTimer <= 0) p.state = "ready";
+    } else if(p.state === "ready"){
+      if(g.mineTriggered(p)){
+        g.explodeMine(p);
+        p.state = "waiting";
+        p.reloadTimer = PL.tepkiliMayin.reload;
+      }
+    } else if(p.state === "waiting"){
+      p.reloadTimer -= dt;
+      if(p.reloadTimer <= 0) p.state = "ready";
+    }
+  },
+  cehennem(p, dt, g){
+    const t = p.rampTime;
+    let dps;
+    if(t < 3)        dps = 5;
+    else if(t < 8)   dps = 10;
+    else if(t < 13)  dps = 15;
+    else if(t < 16)  dps = 25;
+    else             dps = 35;
+    const maxX = p.x + p.w + g.board.cw * PL.cehennem.rt;
+    let target = null, bx = 1e9;
+    for(const z of g.zombies){
+      if(!z.alive || z.row !== p.row) continue;
+      if(z.x < p.x + p.w) continue;
+      if(z.x > maxX) continue;
+      if(z.x < bx){ bx = z.x; target = z; }
+    }
+    if(!target){
+      p.rampTime = 0;
+      p.laserTarget = null;
+      return;
+    }
+    if(p.laserTarget !== target){
+      p.rampTime = 0;
+      p.laserTarget = target;
+    }
+    p.rampTime += dt;
+    target.hit(dps * dt);
   }
 };
 
@@ -361,6 +461,11 @@ export class Plant extends Entity {
     this.burstTimer = 0;
     this.restTimer = 0;
     this.frozen = false;
+    this.rampTime = 0;
+    this.laserTarget = null;
+    this.state = undefined;
+    this.armTimer = 0;
+    this.reloadTimer = 0;
     if(type==="sunflower") this.sunTimer = d.first;
     if(type==="mine") this.armTimer = d.arm;
     if(type==="spike") this.tickTimer = d.tick;
