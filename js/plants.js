@@ -415,9 +415,9 @@ export const BH = {
     let dps;
     if(t < 3)        dps = 5;
     else if(t < 8)   dps = 10;
-    else if(t < 13)  dps = 15;
-    else if(t < 16)  dps = 25;
-    else             dps = 35;
+    else if(t < 13)  dps = 35;
+    else if(t < 16)  dps = 55;
+    else             dps = 60;
     const maxX = p.x + p.w + g.board.cw * PL.cehennem.rt;
     let target = null, bx = 1e9;
     for(const z of g.zombies){
