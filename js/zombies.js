@@ -14,18 +14,42 @@ export class Zombie extends Entity {
     this.color = d.col;
     this.weakenTimer = 0;
     this.burnTimer = 0;
+    this.stunTimer = 0;
+    this.freezeTimer = 0;
+    this.slowTimer = 0;
+    this.slowMult = 1;
   }
 
   update(dt, g){
     if(this.weakenTimer > 0) this.weakenTimer -= dt;
+    if(this.stunTimer > 0) this.stunTimer -= dt;
+    if(this.freezeTimer > 0) this.freezeTimer -= dt;
+    if(this.slowTimer > 0) this.slowTimer -= dt;
+
     if(this.burnTimer > 0){
       this.hit(CFG.BURN_D * dt);
       this.burnTimer -= dt;
     }
+
+    // Donmuş: hiçbir şey yapamaz
+    if(this.freezeTimer > 0) return;
+
     const dmg = this.weakenTimer > 0 ? this.dmg * PL.ignear.wm : this.dmg;
     const target = g.plantInFront(this);
+
+    // Sersemleşmiş: yer ama hareket edemez
+    if(this.stunTimer > 0){
+      if(target) target.hit(dmg * dt);
+      return;
+    }
+
+    // Hız hesabı (yavaşlatma)
+    let spd = this.speed;
+    if(this.slowTimer > 0) spd *= this.slowMult;
+
     if(target) target.hit(dmg * dt);
-    else this.x -= this.speed * dt;
+    else this.x -= spd * dt;
+
     if(this.x + this.w < g.board.ox) g.gameOver();
   }
 
@@ -37,10 +61,20 @@ export class Zombie extends Entity {
   draw(ctx){
     ctx.fillStyle = this.color;
     ctx.fillRect(this.x, this.y, this.w, this.h);
+
+    if(this.freezeTimer > 0){
+      ctx.fillStyle = "rgba(120,200,255,0.55)";
+      ctx.fillRect(this.x, this.y, this.w, this.h);
+    } else if(this.slowTimer > 0){
+      ctx.fillStyle = "rgba(120,180,255,0.25)";
+      ctx.fillRect(this.x, this.y, this.w, this.h);
+    }
+
     if(this.weakenTimer > 0){
       ctx.fillStyle = "rgba(160,80,220,.35)";
       ctx.fillRect(this.x, this.y, this.w, this.h);
     }
+
     if(this.burnTimer > 0){
       const pu = .4 + .3 * Math.sin(performance.now()/100);
       ctx.fillStyle = `rgba(255,120,0,${pu})`;
@@ -50,10 +84,12 @@ export class Zombie extends Entity {
       ctx.textBaseline = "middle";
       ctx.fillText("🔥", this.x+this.w*.5, this.y+this.h*.15);
     }
+
     ctx.font = `${this.h*.55}px serif`;
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
     ctx.fillText("🧟", this.x, this.y+this.h/2);
+
     const badge = BADGE[this.type];
     if(badge){
       ctx.font = `${this.h*(this.type==="armored"?.35:.3)}px serif`;
@@ -62,11 +98,25 @@ export class Zombie extends Entity {
         this.type==="runner" ? this.x+this.w*.55 : this.x+this.w*.5,
         this.y + this.h*(this.type==="runner"?.25:.3));
     }
+
     if(this.weakenTimer > 0){
       ctx.font = `${this.h*.28}px serif`;
       ctx.textAlign = "center";
       ctx.fillText("💜", this.x+this.w*.85, this.y+this.h*.15);
     }
+
+    if(this.freezeTimer > 0){
+      ctx.font = `${this.h*.35}px serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("❄️", this.x+this.w*.5, this.y+this.h*.15);
+    } else if(this.stunTimer > 0){
+      ctx.font = `${this.h*.35}px serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("💫", this.x+this.w*.5, this.y+this.h*.15);
+    }
+
     ctx.fillStyle = "#000";
     ctx.fillRect(this.x, this.y-4, this.w, 3);
     ctx.fillStyle = this.burnTimer>0 ? "#ff8c00" : "#f00";
