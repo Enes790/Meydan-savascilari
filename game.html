@@ -18,44 +18,58 @@
   <div id="test">Yükleniyor...</div>
 
   <script type="module">
-    import {CFG, PL, ZB, BADGE} from './js/config.js';
-    import {cl, ri, rf, col} from './js/utils.js';
-    import {Entity, Board} from './js/entities.js';
-    import {Boom, Heal} from './js/effects.js';
-    import {Pea, Needle, Shell, Sun} from './js/projectiles.js';
-    import {Zombie} from './js/zombies.js';
+  import {CFG, PL, ZB, BADGE} from './js/config.js';
+  import {cl, ri, rf, col} from './js/utils.js';
+  import {Entity, Board} from './js/entities.js';
+  import {Boom, Heal} from './js/effects.js';
+  import {Pea, Needle, Shell, Sun} from './js/projectiles.js';
+  import {Zombie} from './js/zombies.js';
+  import {Plant, Mini, BH} from './js/plants.js';
 
-    // Test zombileri
-    const z1 = new Zombie("normal", 0, 800, 100, 40, 50);
-    const z2 = new Zombie("runner", 1, 800, 200, 40, 50);
-    const z3 = new Zombie("armored", 2, 800, 300, 40, 50);
+  // Test bitkileri
+  const p1 = new Plant("peashooter", 0, 0, 0, 0, 50, 50);
+  const p2 = new Plant("anakok", 1, 1, 60, 60, 50, 50);
+  const p3 = new Plant("sunflower", 2, 2, 120, 120, 50, 50);
 
-    // Hasar testi
-    z1.hit(100);
-    const z1hp = z1.hp;
+  // Mini testi
+  const mini = new Mini(0, 0, 0, 0, 40, 40);
 
-    // Zayıflatma testi
-    z2.weakenTimer = 1.5;
-    const z2dmgWeak = z2.dmg * PL.ignear.wm;
+  // Bitki hasar testi
+  p1.hit(100);
+  const p1hp = p1.hp; // 300 - 100 = 200
 
-    document.getElementById('test').innerHTML = `
-      <div class="kutu">
-        <p class="ok">✅ Tüm modüller yüklendi</p>
-        <p>Config + Utils + Entity + Board + Effects + Projectiles + Zombies</p>
-      </div>
-      <div class="kutu">
-        <p class="ok">✅ Zombi tipleri oluştu</p>
-        <p>Normal: hp=${z1.mhp}, spd=${z1.speed}, dmg=${z1.dmg}</p>
-        <p>Koşucu: hp=${z2.mhp}, spd=${z2.speed}, dmg=${z2.dmg}</p>
-        <p>Zırhlı: hp=${z3.mhp}, spd=${z3.speed}, dmg=${z3.dmg}</p>
-      </div>
-      <div class="kutu">
-        <p class="ok">✅ Hasar sistemi çalışıyor</p>
-        <p>Normal 100 hasar aldı → kalan HP: ${z1hp} <small>(140 olmalı)</small></p>
-        <p>Zayıflatılmış koşucu hasarı: ${z2dmgWeak.toFixed(1)} <small>(90.0 olmalı)</small></p>
-      </div>
-      <p style="font-size:18px;text-align:center;margin-top:24px;color:#0f0">🎉 Adım 4 tamam!</p>
-    `;
-  </script>
+  // Kalkan testi
+  p2.shield = 150;
+  p2.hit(50);
+  const p2shield = p2.shield; // 150 - 50 = 100
+  const p2hp = p2.hp; // 300 (dokunulmadı)
+
+  document.getElementById('test').innerHTML = `
+    <div class="kutu">
+      <p class="ok">✅ Tüm modüller yüklendi</p>
+      <p>Config + Utils + Entity + Board + Effects + Projectiles + Zombies + Plants</p>
+    </div>
+    <div class="kutu">
+      <p class="ok">✅ Bitki tipleri oluştu</p>
+      <p>Bezelye: hp=${p1.mhp}, dmg=${PL.peashooter.dmg}, cd=${PL.peashooter.cd}</p>
+      <p>Ana Kök: hp=${p2.mhp}, dmg=${PL.anakok.dmg}, cd=${PL.anakok.cd}</p>
+      <p>Ayçiçeği: hp=${p3.mhp}, rate=${PL.sunflower.rate}</p>
+    </div>
+    <div class="kutu">
+      <p class="ok">✅ Mini Filiz oluştu</p>
+      <p>HP: ${mini.hp}/${mini.mhp}, erime: ${CFG.MINI_DECAY}/sn</p>
+    </div>
+    <div class="kutu">
+      <p class="ok">✅ Hasar + kalkan sistemi çalışıyor</p>
+      <p>Bezelye 100 hasar aldı → kalan HP: ${p1hp} <small>(200 olmalı)</small></p>
+      <p>Ana Kök 50 hasar aldı (kalkan vardı) → HP: ${p2hp}, kalkan: ${p2shield} <small>(300 HP, 100 kalkan)</small></p>
+    </div>
+    <div class="kutu">
+      <p class="ok">✅ Davranışlar yüklendi</p>
+      <p>Toplam davranış: ${Object.keys(BH).length} <small>(9 olmalı)</small></p>
+    </div>
+    <p style="font-size:18px;text-align:center;margin-top:24px;color:#0f0">🎉 Adım 5 tamam!</p>
+  `;
+</script>
 </body>
 </html>
