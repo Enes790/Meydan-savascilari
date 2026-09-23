@@ -57,15 +57,6 @@
 </head>
 <body>
 
-<script>
-  window.onerror = function(msg, url, line){
-    var b = document.createElement("div");
-    b.style.cssText = "position:fixed;top:0;left:0;right:0;background:red;color:#fff;padding:12px;font-size:12px;z-index:9999;font-family:monospace;word-break:break-all";
-    b.textContent = "HATA: " + msg + " | " + (url||"") + ":" + line;
-    document.body.appendChild(b);
-  };
-</script>
-
 <div id="menu" class="ov">
   <div class="c">
     <h1>🌻 PvZ Fan</h1>
@@ -108,40 +99,50 @@
 </div>
 
 <script type="module">
-  import {Game} from './js/game.js';
+  function showErr(msg){
+    const b = document.createElement("div");
+    b.style.cssText = "position:fixed;top:0;left:0;right:0;background:red;color:#fff;padding:12px;font-size:13px;z-index:9999;font-family:monospace;white-space:pre-wrap;word-break:break-all";
+    b.textContent = "HATA: " + msg;
+    document.body.appendChild(b);
+  }
 
-  const game = new Game(document.getElementById("cv"));
-  window.game = game;
+  try {
+    const {Game} = await import('./js/game.js');
+    const game = new Game(document.getElementById("cv"));
+    window.game = game;
 
-  document.getElementById("bS").addEventListener("click", () => game.showPlantSelect());
-  document.getElementById("bL").addEventListener("click", () => alert("Levelli mod gelecekte gelecek!"));
-  document.getElementById("bG").addEventListener("click", () => game.startFromSelection());
-  document.getElementById("bM").addEventListener("click", () => game.goToMenu());
-  document.getElementById("shovelBtn").addEventListener("click", () => game.toggleShovel());
-  document.getElementById("pauseBtn").addEventListener("click", () => game.pause());
+    document.getElementById("bS").addEventListener("click", () => game.showPlantSelect());
+    document.getElementById("bL").addEventListener("click", () => alert("Levelli mod gelecekte gelecek!"));
+    document.getElementById("bG").addEventListener("click", () => game.startFromSelection());
+    document.getElementById("bM").addEventListener("click", () => game.goToMenu());
+    document.getElementById("shovelBtn").addEventListener("click", () => game.toggleShovel());
+    document.getElementById("pauseBtn").addEventListener("click", () => game.pause());
 
-  window.addEventListener("resize", () => game.resize());
-  window.addEventListener("orientationchange", () => setTimeout(() => game.resize(), 150));
+    window.addEventListener("resize", () => game.resize());
+    window.addEventListener("orientationchange", () => setTimeout(() => game.resize(), 150));
 
-  const cv = document.getElementById("cv");
-  cv.addEventListener("touchstart", e => {
-    e.preventDefault();
-    const r = cv.getBoundingClientRect();
-    const t = e.touches[0];
-    game.onPointer(t.clientX - r.left, t.clientY - r.top);
-  }, {passive:false});
-  cv.addEventListener("mousedown", e => {
-    const r = cv.getBoundingClientRect();
-    game.onPointer(e.clientX - r.left, e.clientY - r.top);
-  });
+    const cv = document.getElementById("cv");
+    cv.addEventListener("touchstart", e => {
+      e.preventDefault();
+      const r = cv.getBoundingClientRect();
+      const t = e.touches[0];
+      game.onPointer(t.clientX - r.left, t.clientY - r.top);
+    }, {passive:false});
+    cv.addEventListener("mousedown", e => {
+      const r = cv.getBoundingClientRect();
+      game.onPointer(e.clientX - r.left, e.clientY - r.top);
+    });
 
-  document.addEventListener("visibilitychange", () => {
-    if(document.hidden) game.lastTime = performance.now();
-  });
+    document.addEventListener("visibilitychange", () => {
+      if(document.hidden) game.lastTime = performance.now();
+    });
 
-  game.resize();
-  game.showMenu();
-  requestAnimationFrame(game._loop);
+    game.resize();
+    game.showMenu();
+    requestAnimationFrame(game._loop);
+  } catch(e){
+    showErr(e.message + "\n\n" + (e.stack || ""));
+  }
 </script>
 </body>
 </html>
