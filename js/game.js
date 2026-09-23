@@ -18,38 +18,37 @@ export class Game {
     this._ft = 0;
     this.state = "menu";
     this.selectedPlants = ["sunflower","peashooter","wallnut","mine"];
+    this.shovelMode = false;
     this._loop = this.loop.bind(this);
   }
 
   // ============ STATE ============
+  hide(id){ document.getElementById(id).style.display = "none"; }
+
   showMenu(){
     this.state = "menu";
+    this.hide("ps"); this.hide("go"); this.hide("pauseOverlay");
     document.getElementById("menu").classList.remove("h");
-    document.getElementById("ps").classList.add("h");
     document.getElementById("topbar").style.display = "none";
     document.getElementById("dbg").style.display = "none";
-    document.getElementById("go").style.display = "none";
   }
 
   showPlantSelect(){
     this.state = "plantSelect";
-    document.getElementById("menu").classList.add("h");
+    this.hide("menu"); this.hide("go"); this.hide("pauseOverlay");
     document.getElementById("ps").classList.remove("h");
     document.getElementById("topbar").style.display = "none";
     document.getElementById("dbg").style.display = "none";
-    document.getElementById("go").style.display = "none";
-    this.renderPS();
+    this.renderCards();
   }
 
   startFromSelection(){
     if(this.state === "playing") return;
     this.reset();
     this.state = "playing";
-    document.getElementById("menu").classList.add("h");
-    document.getElementById("ps").classList.add("h");
+    this.hide("menu"); this.hide("ps"); this.hide("go"); this.hide("pauseOverlay");
     document.getElementById("topbar").style.display = "flex";
     document.getElementById("dbg").style.display = "block";
-    document.getElementById("go").style.display = "none";
     this.lastTime = performance.now();
   }
 
@@ -61,16 +60,25 @@ export class Game {
     document.getElementById("go").style.display = "flex";
   }
 
-  // ============ ANA KÖK KILL ============
+  pause(){
+    if(this.state !== "playing") return;
+    this.state = "paused";
+    document.getElementById("pauseOverlay").style.display = "flex";
+  }
+
+  resume(){
+    if(this.state !== "paused") return;
+    this.state = "playing";
+    this.lastTime = performance.now();
+    this.hide("pauseOverlay");
+  }
+
+  // ============ ÖZEL ============
   onMotherKill(mother, z){
     const c = this.board.cellAt(z.x+z.w/2, z.y+z.h/2);
     if(!c) return;
     let occ = !this.board.isFree(c.row, c.col);
-    if(!occ){
-      for(const m of this.minis){
-        if(m.alive && m.row===c.row && m.col===c.col){ occ=1; break; }
-      }
-    }
+    if(!occ) for(const m of this.minis) if(m.alive && m.row===c.row && m.col===c.col){ occ=1; break; }
     if(occ){
       mother.burstCount = PL.anakok.burst;
       mother.burstTimer = 0;
@@ -82,7 +90,6 @@ export class Game {
     }
   }
 
-  // ============ SHELL PATLAMA ============
   explodeShell(s){
     const isAna = s.owner && s.owner.type==="anakok";
     const maxT = isAna ? 1 : PL.alev.max;
@@ -106,7 +113,7 @@ export class Game {
   }
 
   // ============ SEÇİM EKRANI ============
-  renderPS(){
+  renderCards(){
     const g = document.getElementById("grid");
     g.innerHTML = "";
     for(const [t, d] of Object.entries(PL)){
@@ -143,10 +150,18 @@ export class Game {
     const i = this.selectedPlants.indexOf(t);
     if(i >= 0) this.selectedPlants.splice(i, 1);
     else if(this.selectedPlants.length < CFG.MAX_SLOTS) this.selectedPlants.push(t);
-    this.renderPS();
+    this.renderCards();
   }
 
-  removeSlot(i){ this.selectedPlants.splice(i, 1); this.renderPS(); }
+  removeSlot(i){ this.selectedPlants.splice(i, 1); this.renderCards(); }
+
+  toggleShovel(){
+    this.shovelMode = !this.shovelMode;
+    if(this.shovelMode) this.selected = null;
+    this.refreshSeeds();
+    const btn = document.getElementById("shovelBtn");
+    if(btn) btn.classList.toggle("active", this.shovelMode);
+  }
 
   // ============ RESET ============
   reset(){
@@ -164,11 +179,12 @@ export class Game {
     this.peas = [];
     this.needles = [];
     this.shells = [];
+    this.winds = [];
     this.minis = [];
     this.suns = [];
     this.effects = [];
-    this.winds = [];
     this.selected = null;
+    this.shovelMode = false;
     this.lastTime = performance.now();
     this.buildSeedBar();
     this.refreshSeeds();
@@ -176,9 +192,7 @@ export class Game {
 
   makeBoard(){
     const s = Math.min(this.width/CFG.COLS, this.height/CFG.ROWS);
-    return new Board(CFG.COLS, CFG.ROWS, s,
-      (this.width - s*CFG.COLS)/2,
-      (this.height - s*CFG.ROWS)/2);
+    return new Board(CFG.COLS, CFG.ROWS, s, (this.width - s*CFG.COLS)/2, (this.height - s*CFG.ROWS)/2);
   }
 
   resize(){
@@ -192,7 +206,6 @@ export class Game {
     if(this.board) this.board = this.makeBoard();
   }
 
-  // ============ SEED BAR ============
   buildSeedBar(){
     const el = document.getElementById("seeds");
     el.innerHTML = "";
@@ -209,13 +222,9 @@ export class Game {
     }
   }
 
-  spawnSun(x, y){
-    this.suns.push(new Sun(x, y, Math.min(this.height-50, y+ri(40, 90))));
-  }
-
-  zombieInRow(row, fromX){
-    return this.zombies.some(z => z.alive && z.row===row && z.x > fromX);
-  }
+  // ============ YARDIMCI ============
+  spawnSun(x, y){ this.suns.push(new Sun(x, y, Math.min(this.height-50, y+ri(40, 90)))); }
+  zombieInRow(row, fromX){ return this.zombies.some(z => z.alive && z.row===row && z.x > fromX); }
 
   plantInFront(z){
     let best = null, bx = -1e9;
@@ -232,34 +241,37 @@ export class Game {
     return best;
   }
 
+  // Mayınlar için ortak alan hasarı
+  areaHit(cx, cy, radius, maxTargets, dmg){
+    const arr = [];
+    for(const z of this.zombies){
+      if(!z.alive) continue;
+      const dx = z.x+z.w/2 - cx, dy = z.y+z.h/2 - cy;
+      const d2 = dx*dx + dy*dy;
+      if(d2 < radius*radius) arr.push({z, d2});
+    }
+    arr.sort((a,b) => a.d2 - b.d2);
+    for(const t of arr.slice(0, maxTargets)) t.z.hit(dmg);
+  }
+
   mineTriggered(m){
     const cx = m.x+m.w/2, cy = m.y+m.h/2, r = m.w*CFG.MINE_R;
     return this.zombies.some(z => {
       if(!z.alive) return 0;
-      const dx = z.x+z.w/2-cx, dy = z.y+z.h/2-cy;
+      const dx = z.x+z.w/2 - cx, dy = z.y+z.h/2 - cy;
       return dx*dx + dy*dy < r*r;
     });
   }
 
   explodeMine(m){
     const cx = m.x+m.w/2, cy = m.y+m.h/2, r = m.w*CFG.MINE_R;
-    const arr = [];
-    for(const z of this.zombies){
-      if(!z.alive) continue;
-      const dx = z.x+z.w/2-cx, dy = z.y+z.h/2-cy;
-      const d2 = dx*dx + dy*dy;
-      if(d2 < r*r) arr.push({z, d2});
-    }
-    arr.sort((a,b) => a.d2 - b.d2);
-    for(const t of arr.slice(0, PL.mine.max)) t.z.hit(PL.mine.dmg);
+    this.areaHit(cx, cy, r, PL.mine.max, PL.mine.dmg);
     this.effects.push(new Boom(cx, cy, r));
   }
 
   tryPlant(row, c, type){
     if(!this.board.isFree(row, c)) return 0;
-    for(const m of this.minis){
-      if(m.alive && m.row===row && m.col===c) return 0;
-    }
+    for(const m of this.minis) if(m.alive && m.row===row && m.col===c) return 0;
     if(this.sun < PL[type].c) return 0;
     const cc = this.board.center(row, c);
     const w = this.board.cw*.8, h = this.board.ch*.8;
@@ -273,15 +285,31 @@ export class Game {
 
   collectSun(s){ s.alive = 0; this.sun += CFG.SUNVAL; this.refreshSeeds(); }
 
+  // ============ INPUT ============
   onPointer(px, py){
     if(this.state !== "playing") return;
+
+    // Kürek modu
+    if(this.shovelMode){
+      const c = this.board.cellAt(px, py);
+      if(c && !this.board.isFree(c.row, c.col)){
+        const plant = this.board.grid[c.row][c.col];
+        plant.alive = 0;
+        this.board.remove(c.row, c.col);
+      }
+      this.shovelMode = false;
+      const btn = document.getElementById("shovelBtn");
+      if(btn) btn.classList.remove("active");
+      return;
+    }
+
+    // Güneş toplama
     for(let i = this.suns.length-1; i>=0; i--){
       const s = this.suns[i];
-      if(px >= s.x && px <= s.x+s.w && py >= s.y && py <= s.y+s.h){
-        this.collectSun(s);
-        return;
-      }
+      if(px >= s.x && px <= s.x+s.w && py >= s.y && py <= s.y+s.h){ this.collectSun(s); return; }
     }
+
+    // Bitki dikme
     if(this.selected){
       const c = this.board.cellAt(px, py);
       if(c && this.tryPlant(c.row, c.col, this.selected)){
@@ -322,13 +350,28 @@ export class Game {
     requestAnimationFrame(this._loop);
   }
 
+  // ============ TEMİZLİK (tek yerde) ============
+  cleanup(){
+    this.plants = this.plants.filter(p => p.alive);
+    this.zombies = this.zombies.filter(z => z.alive);
+    this.peas = this.peas.filter(p => p.alive);
+    this.needles = this.needles.filter(n => n.alive);
+    this.shells = this.shells.filter(s => s.alive);
+    this.winds = this.winds.filter(w => w.alive);
+    this.minis = this.minis.filter(m => m.alive);
+    this.suns = this.suns.filter(s => s.alive);
+    this.effects = this.effects.filter(e => e.alive);
+  }
+
   // ============ UPDATE ============
   update(dt){
+    // Gökyüzü güneşi
     this.skyTimer -= dt;
     if(this.skyTimer <= 0){
       this.skyTimer = rf(CFG.SKY_MIN, CFG.SKY_MAX);
       this.spawnSun(rf(this.board.ox+30, this.board.ox+this.board.cols*this.board.cw-30), -20);
     }
+    // Dalga
     this.nextW -= dt;
     if(this.nextW <= 0){
       this.wave++;
@@ -342,6 +385,7 @@ export class Game {
         this.spawnT = this.spawnI;
       }
     }
+    // Tüm entity'ler
     for(const p of this.plants) p.update(dt, this);
     for(const z of this.zombies) z.update(dt, this);
     for(const p of this.peas) p.update(dt, this);
@@ -351,6 +395,7 @@ export class Game {
     for(const m of this.minis) m.update(dt, this);
     for(const s of this.suns) s.update(dt);
     for(const e of this.effects) e.update(dt);
+    // Bitki ölümleri (grid temizliği)
     for(const p of this.plants){
       if(p.healFlash > 0) p.healFlash -= dt;
       if(p.type==="anka" && p.form===1 && p.hp<=0){
@@ -361,15 +406,7 @@ export class Game {
       }
       if(!p.alive && this.board.grid[p.row][p.col] === p) this.board.remove(p.row, p.col);
     }
-    this.plants = this.plants.filter(p => p.alive);
-    this.zombies = this.zombies.filter(z => z.alive);
-    this.peas = this.peas.filter(p => p.alive);
-    this.needles = this.needles.filter(n => n.alive);
-    this.shells = this.shells.filter(s => s.alive);
-    this.winds = this.winds.filter(w => w.alive);
-    this.minis = this.minis.filter(m => m.alive);
-    this.suns = this.suns.filter(s => s.alive);
-    this.effects = this.effects.filter(e => e.alive);
+    this.cleanup();
     document.getElementById("sv").textContent = Math.floor(this.sun);
   }
 
@@ -415,23 +452,18 @@ export class Game {
     ctx.strokeStyle = "rgba(0,0,0,.15)";
     ctx.lineWidth = 1;
     for(let r=0; r<=b.rows; r++){
-      ctx.beginPath();
-      ctx.moveTo(b.ox, b.oy+r*b.ch);
-      ctx.lineTo(b.ox+b.cols*b.cw, b.oy+r*b.ch);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(b.ox, b.oy+r*b.ch); ctx.lineTo(b.ox+b.cols*b.cw, b.oy+r*b.ch); ctx.stroke();
     }
     for(let c=0; c<=b.cols; c++){
-      ctx.beginPath();
-      ctx.moveTo(b.ox+c*b.cw, b.oy);
-      ctx.lineTo(b.ox+c*b.cw, b.oy+b.rows*b.ch);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(b.ox+c*b.cw, b.oy); ctx.lineTo(b.ox+c*b.cw, b.oy+b.rows*b.ch); ctx.stroke();
     }
+    // Katman sırası
     const ghosts = this.plants.filter(p => p.type==="anka" && p.form===2);
     const grounds = this.plants.filter(p => p.type==="spike");
     const uppers = this.plants.filter(p => p.type!=="spike" && !(p.type==="anka" && p.form===2));
-    for(const p of ghosts) p.draw(ctx);
-    for(const p of grounds) p.draw(ctx);
-    for(const p of uppers) p.draw(ctx);
+    for(const p of ghosts) p.draw(ctx, this);
+    for(const p of grounds) p.draw(ctx, this);
+    for(const p of uppers) p.draw(ctx, this);
     for(const m of this.minis) m.draw(ctx);
     for(const z of this.zombies) z.draw(ctx);
     for(const p of this.peas) p.draw(ctx);
