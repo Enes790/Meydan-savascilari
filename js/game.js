@@ -112,18 +112,6 @@ export class Game {
     }
   }
 
-  // Kraliçe'nin küçük zombisi
-  spawnMiniZombie(kralice){
-    const z = new Zombie("normal", kralice.row, kralice.x, kralice.y, kralice.w*0.65, kralice.h*0.65);
-    z.hp = 20;
-    z.mhp = 20;
-    z.speed = 10;
-    z.dmg = 30;
-    z.color = "#c39bd3";
-    z.isMini = true;
-    this.zombies.push(z);
-  }
-
   // ============ SEÇİM EKRANI ============
   renderCards(){
     const g = document.getElementById("grid");
@@ -253,6 +241,7 @@ export class Game {
     return best;
   }
 
+  // Mayınlar için ortak alan hasarı
   areaHit(cx, cy, radius, maxTargets, dmg){
     const arr = [];
     for(const z of this.zombies){
@@ -300,6 +289,7 @@ export class Game {
   onPointer(px, py){
     if(this.state !== "playing") return;
 
+    // Kürek modu
     if(this.shovelMode){
       const c = this.board.cellAt(px, py);
       if(c && !this.board.isFree(c.row, c.col)){
@@ -313,11 +303,13 @@ export class Game {
       return;
     }
 
+    // Güneş toplama
     for(let i = this.suns.length-1; i>=0; i--){
       const s = this.suns[i];
       if(px >= s.x && px <= s.x+s.w && py >= s.y && py <= s.y+s.h){ this.collectSun(s); return; }
     }
 
+    // Bitki dikme
     if(this.selected){
       const c = this.board.cellAt(px, py);
       if(c && this.tryPlant(c.row, c.col, this.selected)){
@@ -358,6 +350,7 @@ export class Game {
     requestAnimationFrame(this._loop);
   }
 
+  // ============ TEMİZLİK (tek yerde) ============
   cleanup(){
     this.plants = this.plants.filter(p => p.alive);
     this.zombies = this.zombies.filter(z => z.alive);
@@ -372,12 +365,13 @@ export class Game {
 
   // ============ UPDATE ============
   update(dt){
+    // Gökyüzü güneşi
     this.skyTimer -= dt;
     if(this.skyTimer <= 0){
       this.skyTimer = rf(CFG.SKY_MIN, CFG.SKY_MAX);
       this.spawnSun(rf(this.board.ox+30, this.board.ox+this.board.cols*this.board.cw-30), -20);
     }
-
+    // Dalga
     this.nextW -= dt;
     if(this.nextW <= 0){
       this.wave++;
@@ -391,7 +385,7 @@ export class Game {
         this.spawnT = this.spawnI;
       }
     }
-
+    // Tüm entity'ler
     for(const p of this.plants) p.update(dt, this);
     for(const z of this.zombies) z.update(dt, this);
     for(const p of this.peas) p.update(dt, this);
@@ -401,7 +395,7 @@ export class Game {
     for(const m of this.minis) m.update(dt, this);
     for(const s of this.suns) s.update(dt);
     for(const e of this.effects) e.update(dt);
-
+    // Bitki ölümleri (grid temizliği)
     for(const p of this.plants){
       if(p.healFlash > 0) p.healFlash -= dt;
       if(p.type==="anka" && p.form===1 && p.hp<=0){
@@ -412,58 +406,29 @@ export class Game {
       }
       if(!p.alive && this.board.grid[p.row][p.col] === p) this.board.remove(p.row, p.col);
     }
-
     this.cleanup();
     document.getElementById("sv").textContent = Math.floor(this.sun);
   }
 
   // ============ DALGA ============
-  waveInt(w){
-    if(w === 0) return 20;
-    if(w === 1) return 20;
-    if(w === 2) return 15;
-    if(w === 3) return 13;
-    if(w <= 29) return 12;
-    if(w <= 69) return 12 + (w - 29) * 0.1;
-    return 16;
-  }
+  waveInt(w){ return w===0 ? 20 : w===1 ? 20 : w===2 ? 15 : w===3 ? 13 : 12; }
 
   valWave(w){
     const t = {1:1,2:1,3:2,4:2,5:4,6:5,7:8,8:8,9:8,10:11,11:11,12:12,13:12,14:13,15:14,16:14,
-               17:15,18:15,19:16,20:16,21:17,22:17,23:17,24:17};
-    if(w <= 24) return t[w];
-    if(w <= 50) return Math.round(25 + (w - 25) * 0.6);
-    return 40 + Math.floor((w - 50) / 10) * 5;
+               17:15,18:15,19:16,20:16,21:17,22:17,23:17,24:17,25:17};
+    return t[w] || 17;
   }
 
   buildWave(){
-    const w = this.wave;
-    let val = this.valWave(w);
+    const w = this.wave, val = this.valWave(w);
     this.lastVal = val;
-
-    // Zombi limitleri (dalga bazlı)
-    const rMax = w<=6 ? 0 : (w<=14 ? 2 : (w<=24 ? 3 : (w<=39 ? 2 : 1)));
-    const aMax = w<=19 ? 0 : (w<=21 ? 1 : (w<=24 ? 3 : (w<=49 ? 3 : 2)));
-    const kMax = w<=24 ? 0 : (w<=39 ? 1 : 2);
-    const bMax = w<=34 ? 0 : 1;
-    const dMax = w<=49 ? 0 : 1;
-
-    const cap = w <= 29 ? CFG.ZCAP_EARLY : CFG.ZCAP_LATE;
-
+    const rMax = w<=6 ? 0 : (w<=14 ? 2 : 3);
+    const aMax = w<=19 ? 0 : (w<=21 ? 1 : (w<=24 ? 2 : 3));
+    let rem = val;
     const list = [];
-    let c;
-
-    // Öncelik: dev → boksör → kraliçe → zırhlı → koşucu → normal
-    c = 0; while(c<dMax && val>=15 && list.length<cap){ list.push("dev"); val-=15; c++; }
-    c = 0; while(c<bMax && val>=5 && list.length<cap){ list.push("boksor"); val-=5; c++; }
-    c = 0; while(c<kMax && val>=4 && list.length<cap){ list.push("kralice"); val-=4; c++; }
-    c = 0; while(c<aMax && val>=6 && list.length<cap){ list.push("armored"); val-=6; c++; }
-    c = 0; while(c<rMax && val>=3 && list.length<cap){ list.push("runner"); val-=3; c++; }
-
-    // Normal max 1 (dalga 25+)
-    const nMax = w<=24 ? 99 : 1;
-    c = 0; while(c<nMax && val>=1 && list.length<cap){ list.push("normal"); val-=1; c++; }
-
+    let c = 0; while(c<aMax && rem>=6){ list.push("armored"); rem-=6; c++; }
+    c = 0; while(c<rMax && rem>=3){ list.push("runner"); rem-=3; c++; }
+    while(rem >= 1){ list.push("normal"); rem -= 1; }
     list.sort(() => Math.random() - .5);
     this.queue = list;
     this.spawnI = list.length>0 ? this.waveInt(w)/list.length : 0;
@@ -475,11 +440,7 @@ export class Game {
     const x = this.board.ox + this.board.cols*this.board.cw + 10 + ri(0, 60);
     const c = this.board.center(row, 0);
     const w = this.board.cw*.6, h = this.board.ch*.7;
-    const z = new Zombie(type, row, x, c.y-h/2, w, h);
-    const mult = 1 + Math.floor(this.wave/10) * 0.05;
-    z.hp *= mult;
-    z.mhp = z.hp;
-    this.zombies.push(z);
+    this.zombies.push(new Zombie(type, row, x, c.y-h/2, w, h));
   }
 
   // ============ DRAW ============
@@ -496,6 +457,7 @@ export class Game {
     for(let c=0; c<=b.cols; c++){
       ctx.beginPath(); ctx.moveTo(b.ox+c*b.cw, b.oy); ctx.lineTo(b.ox+c*b.cw, b.oy+b.rows*b.ch); ctx.stroke();
     }
+    // Katman sırası
     const ghosts = this.plants.filter(p => p.type==="anka" && p.form===2);
     const grounds = this.plants.filter(p => p.type==="spike");
     const uppers = this.plants.filter(p => p.type!=="spike" && !(p.type==="anka" && p.form===2));
