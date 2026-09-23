@@ -1,6 +1,6 @@
 import {Entity} from './entities.js';
 import {CFG, PL} from './config.js';
-import {Pea, Needle, Shell} from './projectiles.js';
+import {Pea, Needle, Shell, Wind} from './projectiles.js';
 import {Heal} from './effects.js';
 import {col} from './utils.js';
 
@@ -293,6 +293,50 @@ export const BH = {
         p.cd = PL.shifaci.cd;
       }
     }
+  },
+  ruzgar(p, dt, g){
+    if(p.windShots === undefined){ p.windShots = 0; p.windTimer = 0; }
+    if(p.windShots >= PL.ruzgar.shots){
+      p.alive = 0;
+      if(g.board.grid[p.row][p.col] === p) g.board.remove(p.row, p.col);
+      return;
+    }
+    p.windTimer -= dt;
+    if(p.windTimer <= 0){
+      p.windTimer = PL.ruzgar.interval;
+      p.windShots++;
+      g.winds.push(new Wind(p.x+p.w, p.y+p.h*.35, p.row, p));
+    }
+  },
+  buzul(p, dt, g){
+    // Ölüm anı: 3x3 alandaki zombileri dondur (bir kere)
+    if(!p.alive && !p.frozen){
+      p.frozen = true;
+      const cx = p.x + p.w/2, cy = p.y + p.h/2;
+      const r = g.board.cw * PL.buzul.auraR;
+      const r2 = r*r;
+      for(const z of g.zombies){
+        if(!z.alive) continue;
+        const zcx = z.x + z.w/2, zcy = z.y + z.h/2;
+        if((zcx-cx)**2 + (zcy-cy)**2 < r2){
+          z.freezeTimer = PL.buzul.freezeT;
+        }
+      }
+      return;
+    }
+    if(!p.alive) return;
+    // Pasif aura: 3x3 alandaki zombileri yavaşlat
+    const cx = p.x + p.w/2, cy = p.y + p.h/2;
+    const r = g.board.cw * PL.buzul.auraR;
+    const r2 = r*r;
+    for(const z of g.zombies){
+      if(!z.alive) continue;
+      const zcx = z.x + z.w/2, zcy = z.y + z.h/2;
+      if((zcx-cx)**2 + (zcy-cy)**2 < r2){
+        z.slowTimer = 0.2;
+        z.slowMult = 1 - PL.buzul.slow;
+      }
+    }
   }
 };
 
@@ -316,6 +360,7 @@ export class Plant extends Entity {
     this.burstCount = 0;
     this.burstTimer = 0;
     this.restTimer = 0;
+    this.frozen = false;
     if(type==="sunflower") this.sunTimer = d.first;
     if(type==="mine") this.armTimer = d.arm;
     if(type==="spike") this.tickTimer = d.tick;
