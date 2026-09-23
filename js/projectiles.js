@@ -1,7 +1,6 @@
 import {Entity} from './entities.js';
 import {CFG, PL} from './config.js';
 
-// ============ PEA (bezelye mermisi) ============
 export class Pea extends Entity {
   constructor(x,y,row,dmg,owner){
     super(x,y,14,14);
@@ -31,12 +30,16 @@ export class Pea extends Entity {
   }
 }
 
-// ============ NEEDLE (iğneatar mermisi) ============
+// İğneatar + Zıpkın aynı sınıfı kullanır
 export class Needle extends Entity {
-  constructor(x,y,row,maxX){
+  constructor(x,y,row,maxX,dmg,pierce,weaken){
     super(x,y,22,10);
-    this.row=row; this.maxX=maxX;
-    this.hits=new Set();
+    this.row = row;
+    this.maxX = maxX;
+    this.dmg = dmg !== undefined ? dmg : PL.ignear.dmg;
+    this.pierce = pierce !== undefined ? pierce : PL.ignear.pierce;
+    this.weaken = weaken !== undefined ? weaken : true;
+    this.hits = new Set();
   }
   update(dt,g){
     this.x += CFG.NEEDLE_SPD*dt;
@@ -44,10 +47,10 @@ export class Needle extends Entity {
     for(const z of g.zombies){
       if(!z.alive || z.row!==this.row || this.hits.has(z)) continue;
       if(this.x < z.x+z.w && this.x+this.w > z.x && this.y < z.y+z.h && this.y+this.h > z.y){
-        z.hit(PL.ignear.dmg);
-        z.weakenTimer = PL.ignear.wt;
+        z.hit(this.dmg);
+        if(this.weaken) z.weakenTimer = PL.ignear.wt;
         this.hits.add(z);
-        if(this.hits.size >= PL.ignear.pierce){ this.alive=0; return; }
+        if(this.hits.size >= this.pierce){ this.alive=0; return; }
       }
     }
   }
@@ -63,7 +66,6 @@ export class Needle extends Entity {
   }
 }
 
-// ============ SHELL (yay mermisi - Ana Kök ve Alev) ============
 export class Shell extends Entity {
   constructor(sx, sy, ex, row, dmg, owner){
     super(sx, sy, 22, 22);
@@ -90,7 +92,6 @@ export class Shell extends Entity {
   }
 }
 
-// ============ WIND (Rüzgar Topu mermisi) ============
 export class Wind extends Entity {
   constructor(x, y, row, owner){
     super(x, y, 14, 14);
@@ -102,7 +103,6 @@ export class Wind extends Entity {
   update(dt, g){
     this.x += 300 * dt;
     if(this.x > g.width + 30){ this.alive = 0; return; }
-    // Max hedefe ulaştıysa kaybol
     if(this.hitZombies.size >= this.maxTargets){ this.alive = 0; return; }
     for(const z of g.zombies){
       if(!z.alive || z.row !== this.row) continue;
@@ -128,7 +128,6 @@ export class Wind extends Entity {
   }
 }
 
-// ============ SUN (güneş) ============
 export class Sun extends Entity {
   constructor(x,y,targetY){
     super(x-18, y-18, 36, 36);
