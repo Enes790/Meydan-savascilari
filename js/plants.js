@@ -414,9 +414,9 @@ export const BH = {
     const t = p.rampTime;
     let dps;
     if(t < 3)        dps = 5;
-    else if(t < 8)   dps = 10;
-    else if(t < 13)  dps = 35;
-    else if(t < 16)  dps = 55;
+    else if(t < 5)   dps = 10;
+    else if(t < 9)  dps = 35;
+    else if(t < 15)  dps = 55;
     else             dps = 60;
     const maxX = p.x + p.w + g.board.cw * PL.cehennem.rt;
     let target = null, bx = 1e9;
