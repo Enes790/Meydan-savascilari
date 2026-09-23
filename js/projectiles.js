@@ -90,6 +90,40 @@ export class Shell extends Entity {
   }
 }
 
+// ============ WIND (Rüzgar Topu mermisi) ============
+export class Wind extends Entity {
+  constructor(x, y, row, owner){
+    super(x, y, 14, 14);
+    this.row = row;
+    this.owner = owner;
+    this.hitZombies = new Set();
+  }
+  update(dt, g){
+    this.x += 300 * dt;
+    if(this.x > g.width + 30){ this.alive = 0; return; }
+    for(const z of g.zombies){
+      if(!z.alive || z.row !== this.row) continue;
+      if(this.hitZombies.has(z)) continue;
+      if(this.x < z.x+z.w && this.x+this.w > z.x &&
+         this.y < z.y+z.h && this.y+this.h > z.y){
+        const boardRight = g.board.ox + g.board.cols*g.board.cw;
+        const zcx = z.x + z.w/2;
+        if(zcx >= boardRight - 30){
+          z.stunTimer = PL.ruzgar.stun;
+        } else {
+          z.x += g.board.cw * PL.ruzgar.push;
+        }
+        this.hitZombies.add(z);
+      }
+    }
+  }
+  draw(ctx){
+    ctx.fillStyle = "rgba(200,230,255,0.75)";
+    ctx.beginPath(); ctx.arc(this.x+7, this.y+7, 7, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.stroke();
+  }
+}
+
 // ============ SUN (güneş) ============
 export class Sun extends Entity {
   constructor(x,y,targetY){
