@@ -167,6 +167,7 @@ export class Game {
     this.minis = [];
     this.suns = [];
     this.effects = [];
+    this.winds = [];
     this.selected = null;
     this.lastTime = performance.now();
     this.buildSeedBar();
@@ -323,13 +324,11 @@ export class Game {
 
   // ============ UPDATE ============
   update(dt){
-    // Gökyüzünden güneş
     this.skyTimer -= dt;
     if(this.skyTimer <= 0){
       this.skyTimer = rf(CFG.SKY_MIN, CFG.SKY_MAX);
       this.spawnSun(rf(this.board.ox+30, this.board.ox+this.board.cols*this.board.cw-30), -20);
     }
-    // Dalga
     this.nextW -= dt;
     if(this.nextW <= 0){
       this.wave++;
@@ -343,16 +342,15 @@ export class Game {
         this.spawnT = this.spawnI;
       }
     }
-    // Tüm objeler
     for(const p of this.plants) p.update(dt, this);
     for(const z of this.zombies) z.update(dt, this);
     for(const p of this.peas) p.update(dt, this);
     for(const n of this.needles) n.update(dt, this);
     for(const s of this.shells) s.update(dt, this);
+    for(const w of this.winds) w.update(dt, this);
     for(const m of this.minis) m.update(dt, this);
     for(const s of this.suns) s.update(dt);
     for(const e of this.effects) e.update(dt);
-    // Bitki ölümleri
     for(const p of this.plants){
       if(p.healFlash > 0) p.healFlash -= dt;
       if(p.type==="anka" && p.form===1 && p.hp<=0){
@@ -363,12 +361,12 @@ export class Game {
       }
       if(!p.alive && this.board.grid[p.row][p.col] === p) this.board.remove(p.row, p.col);
     }
-    // Temizlik
     this.plants = this.plants.filter(p => p.alive);
     this.zombies = this.zombies.filter(z => z.alive);
     this.peas = this.peas.filter(p => p.alive);
     this.needles = this.needles.filter(n => n.alive);
     this.shells = this.shells.filter(s => s.alive);
+    this.winds = this.winds.filter(w => w.alive);
     this.minis = this.minis.filter(m => m.alive);
     this.suns = this.suns.filter(s => s.alive);
     this.effects = this.effects.filter(e => e.alive);
@@ -414,7 +412,6 @@ export class Game {
     ctx.clearRect(0, 0, this.width, this.height);
     ctx.fillStyle = "#5a8f3a";
     ctx.fillRect(0, 0, this.width, this.height);
-    // Grid
     ctx.strokeStyle = "rgba(0,0,0,.15)";
     ctx.lineWidth = 1;
     for(let r=0; r<=b.rows; r++){
@@ -429,7 +426,6 @@ export class Game {
       ctx.lineTo(b.ox+c*b.cw, b.oy+b.rows*b.ch);
       ctx.stroke();
     }
-    // Katman sırası
     const ghosts = this.plants.filter(p => p.type==="anka" && p.form===2);
     const grounds = this.plants.filter(p => p.type==="spike");
     const uppers = this.plants.filter(p => p.type!=="spike" && !(p.type==="anka" && p.form===2));
@@ -441,9 +437,9 @@ export class Game {
     for(const p of this.peas) p.draw(ctx);
     for(const n of this.needles) n.draw(ctx);
     for(const s of this.shells) s.draw(ctx);
+    for(const w of this.winds) w.draw(ctx);
     for(const e of this.effects) e.draw(ctx);
     for(const s of this.suns) s.draw(ctx);
-    // Debug
     document.getElementById("dbg").textContent =
       `FPS:${this._fps} Z:${this.zombies.length} B:${this.plants.length} M:${this.minis.length} D:${this.wave} Değer:${this.lastVal}`;
   }
