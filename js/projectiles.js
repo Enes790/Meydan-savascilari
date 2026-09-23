@@ -1,7 +1,6 @@
 import {Entity} from './entities.js';
 import {CFG, PL} from './config.js';
 
-// ============ PEA (bezelye mermisi) ============
 export class Pea extends Entity {
   constructor(x,y,row,dmg,owner){
     super(x,y,14,14);
@@ -31,7 +30,7 @@ export class Pea extends Entity {
   }
 }
 
-// ============ NEEDLE (iğneatar + zıpkın mermisi) ============
+// İğneatar + Zıpkın aynı sınıfı kullanır
 export class Needle extends Entity {
   constructor(x,y,row,maxX,dmg,pierce,weaken){
     super(x,y,22,10);
@@ -67,7 +66,6 @@ export class Needle extends Entity {
   }
 }
 
-// ============ SHELL (yay mermisi - Ana Kök ve Alev) ============
 export class Shell extends Entity {
   constructor(sx, sy, ex, row, dmg, owner){
     super(sx, sy, 22, 22);
@@ -94,7 +92,6 @@ export class Shell extends Entity {
   }
 }
 
-// ============ WIND (Rüzgar Topu) ============
 export class Wind extends Entity {
   constructor(x, y, row, owner){
     super(x, y, 14, 14);
@@ -115,10 +112,7 @@ export class Wind extends Entity {
          this.y < z.y+z.h && this.y+this.h > z.y){
         const boardRight = g.board.ox + g.board.cols*g.board.cw;
         const zcx = z.x + z.w/2;
-        // Dev: ittirilemez, sadece sersemler
-        if(z.type === "dev"){
-          z.stunTimer = PL.ruzgar.stun;
-        } else if(zcx >= boardRight - 30){
+        if(zcx >= boardRight - 30){
           z.stunTimer = PL.ruzgar.stun;
         } else {
           z.x += g.board.cw * PL.ruzgar.push;
@@ -134,7 +128,6 @@ export class Wind extends Entity {
   }
 }
 
-// ============ SUN (güneş) ============
 export class Sun extends Entity {
   constructor(x,y,targetY){
     super(x-18, y-18, 36, 36);
