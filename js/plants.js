@@ -163,11 +163,9 @@ function drawAlev(p, ctx){
   ctx.beginPath(); ctx.arc(cx, cy, p.w*.07, 0, 6.28); ctx.fill();
 }
 
-// YENİ: Cehennem çizimi (volkanik + lazer)
 function drawCehennem(p, ctx){
   const cx = p.x+p.w/2;
   const cy = p.y+p.h*.5;
-  // Volkanik üçgen gövde
   ctx.fillStyle="#4a1a1a";
   ctx.beginPath();
   ctx.moveTo(cx-p.w*.35, p.y+p.h*.85);
@@ -175,7 +173,6 @@ function drawCehennem(p, ctx){
   ctx.lineTo(cx+p.w*.35, p.y+p.h*.85);
   ctx.closePath();
   ctx.fill();
-  // Lav yarığı
   ctx.strokeStyle="#ff4500";
   ctx.lineWidth=2;
   ctx.beginPath();
@@ -183,28 +180,24 @@ function drawCehennem(p, ctx){
   ctx.lineTo(cx, p.y+p.h*.3);
   ctx.lineTo(cx+p.w*.15, p.y+p.h*.5);
   ctx.stroke();
-  // Emoji
   ctx.font=`${p.h*.5}px serif`;
   ctx.textAlign="center"; ctx.textBaseline="middle";
   ctx.fillText("🌋", cx, p.y+p.h*.65);
-  // Lazer çizimi (hedef varsa)
   if(p.laserTarget && p.laserTarget.alive){
     const tx = p.laserTarget.x + p.laserTarget.w/2;
     const ty = p.laserTarget.y + p.laserTarget.h/2;
     let thick = 2;
-    if(p.rampTime >= 16) thick = 6;
-    else if(p.rampTime >= 13) thick = 5;
-    else if(p.rampTime >= 8) thick = 4;
+    if(p.rampTime >= 12) thick = 6;
+    else if(p.rampTime >= 9) thick = 5;
+    else if(p.rampTime >= 6) thick = 4;
     else if(p.rampTime >= 3) thick = 3;
-    // Dış parlama
     ctx.strokeStyle = `rgba(255,80,0,0.4)`;
     ctx.lineWidth = thick + 4;
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.lineTo(tx, ty);
     ctx.stroke();
-    // İç çekirdek (max'ta sarımsı)
-    ctx.strokeStyle = p.rampTime >= 16 ? "#ffe066" : "#ff4500";
+    ctx.strokeStyle = p.rampTime >= 12 ? "#ffe066" : "#ff4500";
     ctx.lineWidth = thick;
     ctx.beginPath();
     ctx.moveTo(cx, cy);
@@ -213,7 +206,33 @@ function drawCehennem(p, ctx){
   }
 }
 
-const DW = {spike:drawSpike, anakok:drawAna, alev:drawAlev, cehennem:drawCehennem};
+// YENİ: Buzul aura — 3x3 alanı hafif mavi boyar
+function drawBuzul(p, ctx, board){
+  if(board){
+    const r0 = Math.max(0, p.row-1);
+    const r1 = Math.min(board.rows-1, p.row+1);
+    const c0 = Math.max(0, p.col-1);
+    const c1 = Math.min(board.cols-1, p.col+1);
+    for(let r=r0; r<=r1; r++){
+      for(let c=c0; c<=c1; c++){
+        const x = board.ox + c*board.cw;
+        const y = board.oy + r*board.ch;
+        ctx.fillStyle = "rgba(100,180,255,0.18)";
+        ctx.fillRect(x, y, board.cw, board.ch);
+      }
+    }
+  }
+  ctx.fillStyle = p.color;
+  ctx.fillRect(p.x+2, p.y+2, p.w-4, p.h-4);
+  ctx.strokeStyle = "#29b6f6";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(p.x+1, p.y+1, p.w-2, p.h-2);
+  ctx.font=`${p.h*.55}px serif`;
+  ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillText(p.em, p.x+p.w/2, p.y+p.h/2);
+}
+
+const DW = {spike:drawSpike, anakok:drawAna, alev:drawAlev, cehennem:drawCehennem, buzul:drawBuzul};
 
 // ============ BİTKİ DAVRANIŞLARI ============
 const findFirst = (p, g) => {
@@ -413,11 +432,11 @@ export const BH = {
   cehennem(p, dt, g){
     const t = p.rampTime;
     let dps;
-    if(t < 3)        dps = 5;
-    else if(t < 5)   dps = 10;
-    else if(t < 9)  dps = 35;
-    else if(t < 15)  dps = 55;
-    else             dps = 60;
+    if(t < 3)        dps = 1.7;
+    else if(t < 6)   dps = 8;
+    else if(t < 9)   dps = 20;
+    else if(t < 12)  dps = 40;
+    else             dps = 80;
     const maxX = p.x + p.w + g.board.cw * PL.cehennem.rt;
     let target = null, bx = 1e9;
     for(const z of g.zombies){
@@ -490,9 +509,9 @@ export class Plant extends Entity {
     }
   }
 
-  draw(ctx){
+  draw(ctx, g){
     if(this.type==="anka" && this.form===2){ drawAnka(this, ctx); return; }
-    (DW[this.type] || drawBase)(this, ctx);
+    (DW[this.type] || drawBase)(this, ctx, g ? g.board : null);
     if(this.healFlash > 0){
       const a = this.healFlash/.9;
       ctx.fillStyle = `rgba(255,255,255,${a*.6})`;
