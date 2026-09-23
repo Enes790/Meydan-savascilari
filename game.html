@@ -48,6 +48,13 @@
   .slot.f{background:#3a3a5a;border:2px solid #0f0}
   #psb{display:flex;gap:8px;margin-top:auto;padding-top:12px}
   #psb .btn{flex:1;min-width:0}
+  /* Aksiyon butonları (kürek + pause) */
+  #actions{position:fixed;top:calc(62px + env(safe-area-inset-top));right:8px;z-index:5;display:flex;gap:6px}
+  #actions button{width:44px;height:32px;border-radius:8px;background:rgba(58,58,90,0.85);color:#fff;border:2px solid #555;font-size:16px;cursor:pointer;backdrop-filter:blur(4px)}
+  #actions button.active{background:#4caf50;border-color:#0f0;box-shadow:0 0 10px #0f0}
+  /* Duraklatma overlay */
+  #pauseOverlay{display:none;flex-direction:column;gap:16px;background:rgba(0,0,0,0.85);z-index:95}
+  #pauseOverlay h1{font-size:22px}
 </style>
 </head>
 <body>
@@ -76,6 +83,10 @@
 <div id="wrap">
   <div id="topbar"><div id="sunBox">☀ <span id="sv">50</span></div><div id="seeds"></div></div>
   <canvas id="cv"></canvas>
+  <div id="actions">
+    <button id="shovelBtn">🪏</button>
+    <button id="pauseBtn">⏸️</button>
+  </div>
 </div>
 <div id="dbg"></div>
 <div id="go" class="ov">
@@ -83,16 +94,24 @@
   <button class="btn" onclick="game.startFromSelection()">Tekrar Dene</button>
   <button class="btn g" onclick="game.goToMenu()">Ana Menü</button>
 </div>
+<div id="pauseOverlay" class="ov">
+  <h1>⏸️ DURAKLATILDI</h1>
+  <button class="btn" onclick="game.resume()">▶ Devam Et</button>
+  <button class="btn g" onclick="game.goToMenu()">Ana Menü</button>
+</div>
 
 <script type="module">
   import {Game} from './js/game.js';
 
   const game = new Game(document.getElementById("cv"));
+  window.game = game;
 
   document.getElementById("bS").addEventListener("click", () => game.showPlantSelect());
   document.getElementById("bL").addEventListener("click", () => alert("Levelli mod gelecekte gelecek!"));
   document.getElementById("bG").addEventListener("click", () => game.startFromSelection());
   document.getElementById("bM").addEventListener("click", () => game.goToMenu());
+  document.getElementById("shovelBtn").addEventListener("click", () => game.toggleShovel());
+  document.getElementById("pauseBtn").addEventListener("click", () => game.pause());
 
   window.addEventListener("resize", () => game.resize());
   window.addEventListener("orientationchange", () => setTimeout(() => game.resize(), 150));
@@ -112,9 +131,6 @@
   document.addEventListener("visibilitychange", () => {
     if(document.hidden) game.lastTime = performance.now();
   });
-
-  // game'ı global yap (onclick için)
-  window.game = game;
 
   game.resize();
   game.showMenu();
