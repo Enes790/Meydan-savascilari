@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#6fb7e8">
+<title>2D Minecraft · Mobil Demo</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin:0; height:100%; overflow:hidden; background:#0d1117;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; user-select:none; }
+  #game { position:fixed; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+  #ui { position:fixed; inset:0; pointer-events:none; }
+
+  .pad { position:absolute; display:flex; gap:12px; pointer-events:auto; }
+  #padMove { left:14px; bottom:calc(100px + env(safe-area-inset-bottom)); }
+  #padJump { right:14px; bottom:calc(100px + env(safe-area-inset-bottom)); }
+  .btn { width:64px; height:64px; border-radius:18px; border:2px solid rgba(255,255,255,.35);
+    background:rgba(15,20,28,.45); color:#fff; font-size:26px; display:grid; place-items:center;
+    touch-action:none; backdrop-filter:blur(6px); transition:transform .06s, background .1s; }
+  .btn.on { background:rgba(255,255,255,.3); transform:scale(.94); }
+
+  #hotbar { position:absolute; left:50%; transform:translateX(-50%);
+    bottom:calc(14px + env(safe-area-inset-bottom)); display:flex; gap:6px; pointer-events:auto;
+    padding:7px; border-radius:16px; background:rgba(10,14,20,.45);
+    border:2px solid rgba(255,255,255,.18); backdrop-filter:blur(6px); }
+  .slot { width:46px; height:46px; border-radius:11px; border:2px solid rgba(255,255,255,.22);
+    background:rgba(255,255,255,.06); display:grid; place-items:center; font-size:20px;
+    position:relative; touch-action:none; transition:.1s; }
+  .slot.sel { border-color:#ffd84d; background:rgba(255,216,77,.14);
+    box-shadow:0 0 0 2px rgba(255,216,77,.35), 0 0 16px rgba(255,216,77,.5); }
+  .slot canvas { width:30px; height:30px; image-rendering:pixelated; border-radius:5px; }
+
+  #hint { position:absolute; top:calc(10px + env(safe-area-inset-top)); left:50%;
+    transform:translateX(-50%); color:#fff; font-size:11.5px; background:rgba(10,14,20,.45);
+    padding:6px 13px; border-radius:999px; border:1px solid rgba(255,255,255,.15);
+    white-space:nowrap; backdrop-filter:blur(6px); transition:opacity .8s; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="ui">
+  <div id="hint">◀ ▶ yürü · ⤒ zıpla · blok kırmak için basılı tut</div>
+
+  <div class="pad" id="padMove">
+    <div class="btn" id="btnLeft">◀</div>
+    <div class="btn" id="btnRight">▶</div>
+  </div>
+  <div class="pad" id="padJump">
+    <div class="btn" id="btnJump">⤒</div>
+  </div>
+
+  <div id="hotbar"></div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ================== SABİTLER ================== */
+const TILE = 28;
+const WORLD_W = 220;
+const WORLD_H = 30;
+
+const AIR = 0, GRASS = 1, DIRT = 2, STONE = 3, WOOD = 4, LEAF = 5;
+
+const BLOCK_INFO = {
+  [GRASS]: { name: 'Çim',    hardness: 0.55, color: '#4f9e3a' },
+  [DIRT]:  { name: 'Toprak', hardness: 0.55, color: '#7b5232' },
+  [STONE]: { name: 'Taş',    hardness: 1.60, color: '#8b8f96' },
+  [WOOD]:  { name: 'Odun',   hardness: 1.00, color: '#7d5328' },
+  [LEAF]:  { name: 'Yaprak', hardness: 0.30, color: '#2f8b3f' },
+};
+
+const SPEED = 195;
+const JUMP = -365;
+const GRAVITY = 1280;
+const MAX_FALL = 700;
+
+/* ================== CANVAS ================== */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let VW = 0, VH = 0, DPR = 1;
+let cameraX = 0, cameraY = 0;
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  VW = window.innerWidth;
+  VH = window.innerHeight;
+  canvas.width  = Math.round(VW * DPR);
+  canvas.height = Math.round(VH * DPR);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+}
+window.addEventListener('resize', resize);
+
+/* ================== DOKU ÜRETİMİ ================== */
+const TS = 32; // doku kaynak boyutu
+
+function rng(seed) {
+  let s = seed >>> 0;
+  return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+}
+function newTex() { const c = document.createElement('canvas'); c.width = c.height = TS; return c; }
+function edgeShade(g, a = 0.10) {
+  g.fillStyle = `rgba(0,0,0,${a})`;
+  g.fillRect(0, 0, TS, 1); g.fillRect(0, TS - 1, TS, 1);
+  g.fillRect(0, 0, 1, TS); g.fillRect(TS - 1, 0, 1, TS);
+}
+
+function texGrass() {
+  const c = newTex(), g = c.getContext('2d'), r = rng(11);
+  g.fillStyle = '#7b5232'; g.fillRect(0, 0, TS, TS);
+  for (let i = 0; i < 110; i++) {
+    const x = r() * TS | 0, y = r() * TS | 0, s = 1 + (r() * 3 | 0);
+    g.fillStyle = r() < .5 ? 'rgba(0,0,0,.15)' : 'rgba(255,235,200,.09)';
+    g.fillRect(x, y, s, s);
+  }
+  // pürüzlü çim sınırı
+  for (let x = 0; x < TS; x++) {
+    const h = 7 + (r() * 6 | 0);
+    g.fillStyle = '#4f9e3a'; g.fillRect(x, 0, 1, h);
+    g.fillStyle = 'rgba(0,0,0,.16)'; g.fillRect(x, h, 1, 2);
+  }
+  for (let i = 0; i < 70; i++) {
+    const x = r() * TS | 0, y = r() * 9 | 0;
+    g.fillStyle = r() < .5 ? 'rgba(180,255,170,.20)' : 'rgba(0,0,0,.13)';
+    g.fillRect(x, y, 2, 1);
+  }
+  edgeShade(g);
+  return c;
+}
+
+function texDirt() {
+  const c = newTex(), g = c.getContext('2d'), r = rng(23);
+  g.fillStyle = '#7b5232'; g.fillRect(0, 0, TS, TS);
+  for (let i = 0; i < 190; i++) {
+    const x = r() * TS | 0, y = r() * TS | 0, s = 1 + (r() * 3 | 0);
+    g.fillStyle = r() < .45 ? 'rgba(0,0,0,.17)' : (r() < .5 ? 'rgba(255,230,190,.10)' : 'rgba(120,70,40,.35)');
+    g.fillRect(x, y, s, s);
+  }
+  for (let i = 0; i < 7; i++) {
+    const x = r() * (TS - 6) | 0, y = r() * (TS - 6) | 0;
+    g.fillStyle = 'rgba(0,0,0,.20)'; g.fillRect(x, y, 4, 3);
+  }
+  edgeShade(g);
+  return c;
+}
+
+function texStone() {
+  const c = newTex(), g = c.getContext('2d'), r = rng(37);
+  g.fillStyle = '#8b8f96'; g.fillRect(0, 0, TS, TS);
+  for (let i = 0; i < 200; i++) {
+    const x = r() * TS | 0, y = r() * TS | 0, s = 1 + (r() * 4 | 0);
+    g.fillStyle = r() < .5 ? 'rgba(0,0,0,.14)' : 'rgba(255,255,255,.14)';
+    g.fillRect(x, y, s, s);
+  }
+  g.strokeStyle = 'rgba(0,0,0,.22)'; g.lineWidth = 1;
+  for (let i = 0; i < 4; i++) {
+    g.beginPath();
+    let x = r() * TS | 0, y = r() * TS | 0;
+    g.moveTo(x, y);
+    for (let j = 0; j < 3; j++) { x += (r() * 12 | 0) - 6; y += (r() * 12 | 0) - 6; g.lineTo(x, y); }
+    g.stroke();
+  }
+  edgeShade(g, 0.12);
+  return c;
+}
+
+function texWood() {
+  const c = newTex(), g = c.getContext('2d'), r = rng(53);
+  g.fillStyle = '#7d5328'; g.fillRect(0, 0, TS, TS);
+  for (let i = 0; i < 9; i++) {
+    const x = r() * TS | 0;
+    g.fillStyle = 'rgba(0,0,0,.17)';
+    g.fillRect(x, 0, 1 + (r() * 2 | 0), TS);
+  }
+  for (let i = 0; i < 45; i++) {
+    const x = r() * TS | 0, y = r() * TS | 0;
+    g.fillStyle = r() < .5 ? 'rgba(0,0,0,.12)' : 'rgba(255,220,170,.11)';
+    g.fillRect(x, y, 2, 2);
+  }
+  g.fillStyle = 'rgba(60,35,15,.55)';
+  g.fillRect(0, 0, 2, TS); g.fillRect(TS - 2, 0, 2, TS);
+  return c;
+}
+
+function texLeaf() {
+  const c = newTex(), g = c.getContext('2d'), r = rng(71);
+  g.fillStyle = '#2f8b3f'; g.fillRect(0, 0, TS, TS);
+  for (let i = 0; i < 230; i++) {
+    const x = r() * TS | 0, y = r() * TS | 0, s = 1 + (r() * 3 | 0);
+    g.fillStyle = r() < .5 ? 'rgba(0,0,0,.21)' : 'rgba(160,255,170,.24)';
+    g.fillRect(x, y, s, s);
+  }
+  for (let i = 0; i < 12; i++) {
+    const x = r() * TS | 0, y = r() * TS | 0;
+    g.fillStyle = 'rgba(0,0,0,.26)'; g.fillRect(x, y, 2, 3);
+  }
+  edgeShade(g, 0.08);
+  return c;
+}
+
+const TEX = {
+  [GRASS]: texGrass(),
+  [DIRT]:  texDirt(),
+  [STONE]: texStone(),
+  [WOOD]:  texWood(),
+  [LEAF]:  texLeaf(),
+};
+
+/* Çatlak evreleri (4 kademe) */
+function makeCracks() {
+  const arr = [];
+  for (let s = 1; s <= 4; s++) {
+    const c = newTex(), g = c.getContext('2d'), r = rng(900 + s * 17);
+    g.strokeStyle = 'rgba(0,0,0,.6)'; g.lineWidth = 1.5; g.lineCap = 'round';
+    const lines = s * 4;
+    for (let i = 0; i < lines; i++) {
+      g.beginPath();
+      let x = r() * TS | 0, y = r() * TS | 0;
+      g.moveTo(x, y);
+      const steps = 2 + (r() * 3 | 0);
+      for (let j = 0; j < steps; j++) {
+        x += (r() * 14 | 0) - 7; y += (r() * 14 | 0) - 7;
+        g.lineTo(x, y);
+      }
+      g.stroke();
+    }
+    g.fillStyle = `rgba(0,0,0,${s * 0.05})`;
+    g.fillRect(0, 0, TS, TS);
+    arr.push(c);
+  }
+  return arr;
+}
+const CRACK = makeCracks();
+
+/* ================== DÜNYA ================== */
+const world = [];
+for (let y = 0; y < WORLD_H; y++) world.push(new Array(WORLD_W).fill(AIR));
+
+function generateWorld() {
+  const baseY = 18;
+  for (let x = 0; x < WORLD_W; x++) {
+    let h = baseY + Math.round(Math.sin(x * 0.18) * 1.4 + Math.sin(x * 0.045) * 2.2);
+    h = Math.max(12, Math.min(24, h));
+    for (let y = h; y < WORLD_H; y++) {
+      if (y === h) world[y][x] = GRASS;
+      else if (y < h + 4) world[y][x] = DIRT;
+      else world[y][x] = STONE;
+    }
+  }
+  // Ağaçlar
+  for (let x = 6; x < WORLD_W - 6; x += 11) {
+    if ((x * 7919) % 5 < 2) continue;
+    let gy = -1;
+    for (let y = 0; y < WORLD_H; y++) { if (world[y][x] !== AIR) { gy = y; break; } }
+    if (gy <= 0 || world[gy][x] !== GRASS) continue;
+
+    const trunk = 4 + ((x * 13) % 3);
+    for (let i = 1; i <= trunk; i++) if (gy - i >= 0) world[gy - i][x] = WOOD;
+
+    const top = gy - trunk;
+    for (let dy = -2; dy <= 1; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        if (Math.abs(dx) === 2 && dy >= 0) continue;
+        const tx = x + dx, ty = top + dy;
+        if (tx >= 0 && tx < WORLD_W && ty >= 0 && ty < WORLD_H && world[ty][tx] === AIR)
+          world[ty][tx] = LEAF;
+      }
+    }
+    if (top - 1 >= 0 && world[top - 1][x] === AIR) world[top - 1][x] = LEAF;
+  }
+}
+generateWorld();
+
+/* ================== OYUNCU ================== */
+const player = { x: 0, y: 0, w: 20, h: 38, vx: 0, vy: 0, onGround: false, walk: 0 };
+
+function spawnPlayer() {
+  const px = Math.floor(WORLD_W / 2);
+  for (let y = 0; y < WORLD_H; y++) {
+    if (world[y][px] !== AIR) {
+      player.x = px * TILE + (TILE - player.w) / 2;
+      player.y = y * TILE - player.h - 1;
+      return;
+    }
+  }
+  player.x = px * TILE;
+  player.y = 0;
+}
+spawnPlayer();
+
+/* ================== DURUM & ENVANTER ================== */
+const keys = { left: false, right: false, jump: false };
+
+const SLOTS = [
+  { type: 'tool',  name: 'Yumruk',    icon: '✊', speed: 1.0 },
+  { type: 'tool',  name: 'Taş Kazma', icon: '⛏️', speed: 2.6 },
+  { type: 'block', name: 'Çim',       block: GRASS },
+  { type: 'block', name: 'Toprak',    block: DIRT },
+  { type: 'block', name: 'Taş',       block: STONE },
+  { type: 'block', name: 'Odun',      block: WOOD },
+];
+
+const state = {
+  selected: 0,
+  mining: null,          // { tx, ty, progress }
+  pointerDown: false,
+  particles: [],
+};
+
+/* ================== HOTBAR (DOM) ================== */
+const hotbarEl = document.getElementById('hotbar');
+const slotEls = [];
+
+SLOTS.forEach((slot, i) => {
+  const el = document.createElement('div');
+  el.className = 'slot';
+
+  if (slot.type === 'block') {
+    const cv = document.createElement('canvas');
+    cv.width = TS; cv.height = TS;
+    cv.getContext('2d').drawImage(TEX[slot.block], 0, 0);
+    el.appendChild(cv);
+  } else {
+    el.textContent = slot.icon;
+  }
+
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    selectSlot(i);
+  });
+
+  hotbarEl.appendChild(el);
+  slotEls.push(el);
+});
+
+function selectSlot(i) {
+  state.selected = i;
+  slotEls.forEach((el, k) => el.classList.toggle('sel', k === i));
+  state.mining = null;
+}
+selectSlot(0);
+
+/* ================== GİRDİ ================== */
+function bindHold(el, on, off) {
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    el.classList.add('on');
+    on();
+  });
+  const end = () => { el.classList.remove('on'); off(); };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+  el.addEventListener('pointerleave', end);
+}
+
+bindHold(document.getElementById('btnLeft'),  () => keys.left = true,  () => keys.left = false);
+bindHold(document.getElementById('btnRight'), () => keys.right = true, () => keys.right = false);
+bindHold(document.getElementById('btnJump'),  () => keys.jump = true,  () => keys.jump = false);
+
+window.addEventListener('keydown', (e) => {
+  const k = e.key.toLowerCase();
+  if (k === 'a' || k === 'arrowleft')  keys.left = true;
+  if (k === 'd' || k === 'arrowright') keys.right = true;
+  if (k === ' ' || k === 'w' || k === 'arrowup') { keys.jump = true; e.preventDefault(); }
+  if (k >= '1' && k <= '6') selectSlot(parseInt(k) - 1);
+});
+window.addEventListener('keyup', (e) => {
+  const k = e.key.toLowerCase();
+  if (k === 'a' || k === 'arrowleft')  keys.left = false;
+  if (k === 'd' || k === 'arrowright') keys.right = false;
+  if (k === ' ' || k === 'w' || k === 'arrowup') keys.jump = false;
+});
+
+/* Dokunmatik: ekrana bas → kır / koy */
+function screenToWorld(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  return { wx: clientX - r.left + cameraX, wy: clientY - r.top + cameraY };
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  state.pointerDown = true;
+  handlePointer(e, true);
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!state.pointerDown) return;
+  handlePointer(e, false);
+});
+const endPointer = () => { state.pointerDown = false; state.mining = null; };
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+function canReach(tx, ty) {
+  const pcx = player.x + player.w / 2, pcy = player.y + player.h / 2;
+  const bcx = tx * TILE + TILE / 2,   bcy = ty * TILE + TILE / 2;
+  const dx = pcx - bcx, dy = pcy - bcy;
+  const max = TILE * 4.5;
+  return dx * dx + dy * dy < max * max;
+}
+function overlapsPlayer(tx, ty) {
+  const bx = tx * TILE, by = ty * TILE;
+  return bx < player.x + player.w && bx + TILE > player.x &&
+         by < player.y + player.h && by + TILE > player.y;
+}
+
+function handlePointer(e, isDown) {
+  const p = screenToWorld(e.clientX, e.clientY);
+  const tx = Math.floor(p.wx / TILE);
+  const ty = Math.floor(p.wy / TILE);
+  if (tx < 0 || tx >= WORLD_W || ty < 0 || ty >= WORLD_H) return;
+
+  const block = world[ty][tx];
+
+  if (block !== AIR) {
+    if (!canReach(tx, ty)) { state.mining = null; return; }
+    if (state.mining && state.mining.tx === tx && state.mining.ty === ty) return;
+    state.mining = { tx, ty, progress: 0 };
+  } else {
+    state.mining = null;
+    if (isDown) {
+      const sel = SLOTS[state.selected];
+      if (sel.type === 'block' && canReach(tx, ty) && !overlapsPlayer(tx, ty)) {
+        world[ty][tx] = sel.block;
+      }
+    }
+  }
+}
+
+/* ================== FİZİK ================== */
+function isSolid(tx, ty) {
+  if (tx < 0 || tx >= WORLD_W) return true;
+  if (ty >= WORLD_H) return true;
+  if (ty < 0) return false;
+  return world[ty][tx] !== AIR;
+}
+
+function resolveX() {
+  const left = Math.floor(player.x / TILE);
+  const right = Math.floor((player.x + player.w - 1) / TILE);
+  const top = Math.floor(player.y / TILE);
+  const bottom = Math.floor((player.y + player.h - 1) / TILE);
+
+  for (let ty = top; ty <= bottom; ty++) {
+    for (let tx = left; tx <= right; tx++) {
+      if (isSolid(tx, ty)) {
+        if (player.vx > 0) player.x = tx * TILE - player.w;
+        else if (player.vx < 0) player.x = (tx + 1) * TILE;
+        player.vx = 0;
+        return;
+      }
+    }
+  }
+}
+
+function resolveY() {
+  const left = Math.floor(player.x / TILE);
+  const right = Math.floor((player.x + player.w - 1) / TILE);
+  const top = Math.floor(player.y / TILE);
+  const bottom = Math.floor((player.y + player.h - 1) / TILE);
+
+  for (let ty = top; ty <= bottom; ty++) {
+    for (let tx = left; tx <= right; tx++) {
+      if (isSolid(tx, ty)) {
+        if (player.vy > 0) { player.y = ty * TILE - player.h; player.onGround = true; }
+        else if (player.vy < 0) { player.y = (ty + 1) * TILE; }
+        player.vy = 0;
+        return;
+      }
+    }
+  }
+}
+
+/* ================== KIRMA ================== */
+function breakBlock(tx, ty) {
+  const block = world[ty][tx];
+  if (block === AIR) return;
+  world[ty][tx] = AIR;
+  spawnParticles(tx, ty, block);
+}
+
+function spawnParticles(tx, ty, block) {
+  const color = (BLOCK_INFO[block] && BLOCK_INFO[block].color) || '#999';
+  for (let i = 0; i < 10; i++) {
+    state.particles.push({
+      x: tx * TILE + Math.random() * TILE,
+      y: ty * TILE + Math.random() * TILE,
+      vx: (Math.random() - 0.5) * 150,
+      vy: -Math.random() * 170 - 30,
+      life: 0.45 + Math.random() * 0.45,
+      max: 0.9,
+      size: 2 + Math.random() * 3,
+      color,
+    });
+  }
+}
+
+function updateMining(dt) {
+  if (!state.pointerDown || !state.mining) return;
+  const { tx, ty } = state.mining;
+  const block = world[ty][tx];
+  if (block === AIR) { state.mining = null; return; }
+
+  const info = BLOCK_INFO[block];
+  const sel = SLOTS[state.selected];
+  const toolSpeed = sel.type === 'tool' ? sel.speed : 1.0;
+
+  state.mining.progress += (dt * toolSpeed) / info.hardness;
+
+  if (state.mining.progress >= 1) {
+    breakBlock(tx, ty);
+    state.mining = null;
+  }
+}
+
+/* ================== GÜNCELLEME ================== */
+const clamp = (v, a, b) => v < a ? a : (v > b ? b : v);
+
+function update(dt) {
+  // Yatay hareket
+  const dir = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+  player.vx = dir * SPEED;
+  if (dir !== 0) player.walk += dt * 11;
+
+  // Zıplama
+  if (keys.jump && player.onGround) {
+    player.vy = JUMP;
+    player.onGround = false;
+  }
+
+  player.vy += GRAVITY * dt;
+  if (player.vy > MAX_FALL) player.vy = MAX_FALL;
+
+  // Çarpışma
+  player.x += player.vx * dt;
+  resolveX();
+
+  player.onGround = false;
+  player.y += player.vy * dt;
+  resolveY();
+
+  // Dünya sınırları
+  if (player.x < 0) player.x = 0;
+  if (player.x + player.w > WORLD_W * TILE) player.x = WORLD_W * TILE - player.w;
+  if (player.y > WORLD_H * TILE + 300) spawnPlayer();
+
+  updateMining(dt);
+
+  // Partiküller
+  for (let i = state.particles.length - 1; i >= 0; i--) {
+    const p = state.particles[i];
+    p.vy += 900 * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.life -= dt;
+    if (p.life <= 0) state.particles.splice(i, 1);
+  }
+
+  // Kamera
+  const targetX = player.x + player.w / 2 - VW / 2;
+  const targetY = player.y + player.h / 2 - VH * 0.55;
+  const smooth = Math.min(1, dt * 11);
+  cameraX += (targetX - cameraX) * smooth;
+  cameraY += (targetY - cameraY) * smooth;
+  cameraX = clamp(cameraX, 0, Math.max(0, WORLD_W * TILE - VW));
+  cameraY = clamp(cameraY, 0, Math.max(0, WORLD_H * TILE - VH));
+}
+
+/* ================== ÇİZİM ================== */
+function drawSky() {
+  const g = ctx.createLinearGradient(0, 0, 0, VH);
+  g.addColorStop(0, '#6fb7e8');
+  g.addColorStop(1, '#c8e7f7');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, VW, VH);
+
+  // Güneş
+  const sx = VW - 70, sy = 70 - cameraY * 0.08;
+  ctx.fillStyle = 'rgba(255,246,180,.95)';
+  ctx.beginPath(); ctx.arc(sx, sy, 26, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,246,180,.22)';
+  ctx.beginPath(); ctx.arc(sx, sy, 44, 0, Math.PI * 2); ctx.fill();
+
+  // Bulutlar (parallaks)
+  ctx.fillStyle = 'rgba(255,255,255,.78)';
+  const off = -(cameraX * 0.25);
+  for (let i = 0; i < 7; i++) {
+    const total = VW + 500;
+    let bx = ((i * 340 + off) % total + total) % total - 250;
+    const by = 45 + ((i * 53) % 90) - cameraY * 0.12;
+    cloud(bx, by, 55 + (i % 3) * 22);
+  }
+}
+function cloud(x, y, s) {
+  ctx.beginPath();
+  ctx.arc(x, y, s * 0.42, 0, Math.PI * 2);
+  ctx.arc(x + s * 0.42, y - s * 0.16, s * 0.34, 0, Math.PI * 2);
+  ctx.arc(x + s * 0.85, y, s * 0.4, 0, Math.PI * 2);
+  ctx.arc(x + s * 0.45, y + s * 0.14, s * 0.3, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawWorld() {
+  const x0 = Math.max(0, Math.floor(cameraX / TILE));
+  const x1 = Math.min(WORLD_W - 1, Math.ceil((cameraX + VW) / TILE));
+  const y0 = Math.max(0, Math.floor(cameraY / TILE));
+  const y1 = Math.min(WORLD_H - 1, Math.ceil((cameraY + VH) / TILE));
+
+  for (let ty = y0; ty <= y1; ty++) {
+    for (let tx = x0; tx <= x1; tx++) {
+      const b = world[ty][tx];
+      if (b === AIR) continue;
+      const sx = Math.round(tx * TILE - cameraX);
+      const sy = Math.round(ty * TILE - cameraY);
+      ctx.drawImage(TEX[b], sx, sy, TILE, TILE);
+    }
+  }
+}
+
+function drawPlayer() {
+  const px = Math.round(player.x - cameraX);
+  const py = Math.round(player.y - cameraY);
+  const swing = Math.sin(player.walk) * 2;
+
+  // Bacaklar
+  ctx.fillStyle = '#2b3f6b';
+  ctx.fillRect(px + 2, py + 26, 7, 12 + swing * 0.4);
+  ctx.fillRect(px + 11, py + 26, 7, 12 - swing * 0.4);
+
+  // Gövde
+  ctx.fillStyle = '#2e8bc0';
+  ctx.fillRect(px + 1, py + 14, 18, 14);
+
+  // Kollar
+  ctx.fillStyle = '#2e8bc0';
+  ctx.fillRect(px - 1, py + 15 + swing, 3, 9);
+  ctx.fillRect(px + 18, py + 15 - swing, 3, 9);
+  ctx.fillStyle = '#f0c090';
+  ctx.fillRect(px - 1, py + 23 + swing, 3, 4);
+  ctx.fillRect(px + 18, py + 23 - swing, 3, 4);
+
+  // Kafa
+  ctx.fillStyle = '#f0c090';
+  ctx.fillRect(px + 1, py + 1, 18, 13);
+  // Saç
+  ctx.fillStyle = '#4a3320';
+  ctx.fillRect(px + 1, py + 1, 18, 4);
+  // Gözler
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(px + 5, py + 7, 3, 3);
+  ctx.fillRect(px + 12, py + 7, 3, 3);
+  // Ağız
+  ctx.fillStyle = 'rgba(0,0,0,.45)';
+  ctx.fillRect(px + 8, py + 11, 4, 1);
+}
+
+function drawMiningOverlay() {
+  if (!state.mining) return;
+  const { tx, ty, progress } = state.mining;
+  const sx = Math.round(tx * TILE - cameraX);
+  const sy = Math.round(ty * TILE - cameraY);
+
+  // Hedef çerçevesi
+  ctx.strokeStyle = 'rgba(255,255,255,.85)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(sx + 1, sy + 1, TILE - 2, TILE - 2);
+
+  // Çatlak evresi
+  const stage = Math.min(3, Math.floor(progress * 4));
+  ctx.drawImage(CRACK[stage], sx, sy, TILE, TILE);
+}
+
+function drawParticles() {
+  for (const p of state.particles) {
+    const a = Math.max(0, Math.min(1, p.life / p.max));
+    ctx.globalAlpha = a;
+    ctx.fillStyle = p.color;
+    const sx = Math.round(p.x - cameraX);
+    const sy = Math.round(p.y - cameraY);
+    ctx.fillRect(sx, sy, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function render() {
+  drawSky();
+  drawWorld();
+  drawMiningOverlay();
+  drawPlayer();
+  drawParticles();
+}
+
+/* ================== DÖNGÜ ================== */
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min((now - last) / 1000, 0.033);
+  last = now;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+
+resize();
+requestAnimationFrame(loop);
+
+// İpucu bir süre sonra soluklaşsın
+setTimeout(() => {
+  const h = document.getElementById('hint');
+  if (h) h.style.opacity = '0.35';
+}, 6000);
+
+})();
+</script>
+</body>
+</html>
